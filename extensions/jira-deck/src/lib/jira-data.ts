@@ -1,0 +1,652 @@
+import { environment } from "@raycast/api";
+import { markdownToAdf } from "./adf";
+import {
+  Board,
+  Choice,
+  Created,
+  FieldErrors,
+  Issue,
+  IssueGroup,
+  IssueTypeChoice,
+  IssueScope,
+  NewIssue,
+  ParentChoice,
+  Space,
+  SpaceActivity,
+  SprintChoice,
+  StatusCategory,
+  TypeFields,
+  User,
+} from "./issue";
+import { agilePages, jira, JiraError, jqlString, myIssuesJql, siteOrigin } from "./jira";
+
+// The extension's data from Jira Cloud. Views get it through source.ts.
+
+/** Upper bound on issues per view, so a huge board can't fill memory. Counts say "loaded" past it. */
+const MAX_ISSUES = 500;
+const MAX_BOARDS = 1000;
+
+const BASE_FIELDS = [
+  "summary",
+  "issuetype",
+  "status",
+  "priority",
+  "assignee",
+  "reporter",
+  "parent",
+  "created",
+  "updated",
+];
+
+interface JiraUser {
+  accountId: string;
+  displayName: string;
+  active?: boolean;
+}
+
+interface JiraIssue {
+  id: string;
+  key: string;
+  fields: {
+    summary?: string;
+    issuetype?: { name: string };
+    status?: { name: string; statusCategory?: { key: string } };
+    priority?: { name: string } | null;
+    assignee?: JiraUser | null;
+    reporter?: JiraUser | null;
+    parent?: { key: string; fields?: { summary?: string; issuetype?: { name?: string; hierarchyLevel?: number } } };
+    /** Company-managed spaces on the Agile API. */
+    epic?: { key: string; name?: string; summary?: string } | null;
+    created: string;
+    updated: string;
+    [field: string]: unknown;
+  };
+}
+
+interface JiraBoard {
+  id: number;
+  name: string;
+  type: string;
+  location?: { projectKey?: string; projectName?: string };
+}
+
+interface JiraSprint {
+  id: number;
+  name: string;
+  state?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+const CATEGORIES: Record<string, StatusCategory> = { new: "todo", indeterminate: "inProgress", done: "done" };
+
+// Looked up once per launch. Story points live in a custom field whose ID differs per site.
+let storyPointsField: Promise<string | undefined> | undefined;
+
+function getStoryPointsField(): Promise<string | undefined> {
+  storyPointsField ??= jira<{ id: string; name: string; schema?: { type?: string } }[]>("/rest/api/3/field")
+    .then(
+      (fields) =>
+        fields.find((field) => /^story point(s| estimate)$/i.test(field.name) && field.schema?.type === "number")?.id,
+    )
+    .catch(() => undefined);
+  return storyPointsField;
+}
+
+async function issueFields(agile: boolean): Promise<string> {
+  const points = await getStoryPointsField();
+  return [...BASE_FIELDS, ...(agile ? ["epic"] : []), ...(points ? [points] : [])].join(",");
+}
+
+function toUser(user?: JiraUser | null): User | undefined {
+  return user ? { accountId: user.accountId, displayName: user.displayName } : undefined;
+}
+
+function toIssue(raw: JiraIssue, origin: string, pointsField?: string): Issue {
+  const { fields } = raw;
+  const parentType = fields.parent?.fields?.issuetype;
+  const epic =
+    fields.parent && (parentType?.hierarchyLevel === 1 || parentType?.name === "Epic")
+      ? { key: fields.parent.key, summary: fields.parent.fields?.summary ?? "" }
+      : fields.epic
+        ? { key: fields.epic.key, summary: fields.epic.summary ?? fields.epic.name ?? "" }
+        : undefined;
+  const points = pointsField ? fields[pointsField] : undefined;
+
+  return {
+    id: raw.id,
+    key: raw.key,
+    summary: fields.summary ?? "",
+    issueType: fields.issuetype?.name ?? "Issue",
+    status: {
+      name: fields.status?.name ?? "Unknown",
+      category: CATEGORIES[fields.status?.statusCategory?.key ?? ""] ?? "todo",
+    },
+    priority: fields.priority?.name,
+    assignee: toUser(fields.assignee),
+    reporter: toUser(fields.reporter),
+    epic,
+    storyPoints: typeof points === "number" ? points : undefined,
+    created: fields.created,
+    updated: fields.updated,
+    url: `${origin}/browse/${raw.key}`,
+  };
+}
+
+function origin(): string {
+  // jira() already refused to run without a site, so this is set by the time it's used.
+  return siteOrigin() ?? "";
+}
+
+export async function getMyself(): Promise<User> {
+  const me = await jira<JiraUser>("/rest/api/3/myself");
+  return { accountId: me.accountId, displayName: me.displayName };
+}
+
+function toBoard(board: JiraBoard): Board {
+  return {
+    id: String(board.id),
+    name: board.name,
+    type: board.type === "kanban" ? "kanban" : board.type === "simple" ? "simple" : "scrum",
+    spaceKey: board.location?.projectKey,
+    spaceName: board.location?.projectName,
+  };
+}
+
+/** Only the boards this account can see. Jira filters them by permission. */
+export async function getBoards(): Promise<Board[]> {
+  const { items } = await agilePages<JiraBoard>("/rest/agile/1.0/board", "values", MAX_BOARDS);
+  return items.map(toBoard).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function getBoardUrl(board: Board): string | undefined {
+  const site = siteOrigin();
+  return site ? `${site}/secure/RapidBoard.jspa?rapidView=${encodeURIComponent(board.id)}` : undefined;
+}
+
+/**
+ * Spaces the user worked in over the last 30 days, busiest first, then the ones Jira says they viewed lately.
+ * Only for suggesting boards, so one page of issues is enough.
+ */
+export async function getSpaceActivity(): Promise<SpaceActivity[]> {
+  const me = jqlString((await getMyself()).accountId);
+  const [search, recent] = await Promise.all([
+    jira<{ issues: { fields: { project?: { key: string } } }[] }>("/rest/api/3/search/jql", {
+      method: "POST",
+      body: {
+        jql: `(assignee = ${me} OR reporter = ${me} OR watcher = ${me}) AND updated >= -30d`,
+        fields: ["project"],
+        maxResults: 100,
+      },
+    }),
+    jira<{ key: string }[]>("/rest/api/3/project/recent", { query: { maxResults: 20 } }).catch(() => []),
+  ]);
+  const counts = new Map<string, number>();
+  for (const { fields } of search.issues) {
+    if (fields.project) counts.set(fields.project.key, (counts.get(fields.project.key) ?? 0) + 1);
+  }
+  for (const { key } of recent) if (!counts.has(key)) counts.set(key, 0);
+  return [...counts].map(([spaceKey, issues]) => ({ spaceKey, issues })).sort((a, b) => b.issues - a.issues);
+}
+
+async function findBoard(boardId: string): Promise<Board | undefined> {
+  try {
+    return toBoard(await jira<JiraBoard>(`/rest/agile/1.0/board/${encodeURIComponent(boardId)}`));
+  } catch (error) {
+    if (error instanceof JiraError && (error.status === 403 || error.status === 404)) return undefined;
+    throw error;
+  }
+}
+
+const MISSING_BOARD = "This board was deleted, or your Jira account can't see it anymore.";
+
+function boardNotice(title: string, notice: string, board?: Board): IssueScope {
+  return { title, issues: [], complete: true, board, notice };
+}
+
+async function boardIssues(
+  path: string,
+  query: Record<string, string> = {},
+): Promise<{ issues: Issue[]; complete: boolean }> {
+  const [fields, pointsField] = await Promise.all([issueFields(true), getStoryPointsField()]);
+  const { items, complete } = await agilePages<JiraIssue>(path, "issues", MAX_ISSUES, { ...query, fields });
+  const site = origin();
+  return { issues: items.map((issue) => toIssue(issue, site, pointsField)), complete };
+}
+
+/** A board's sprints in one state. Undefined when the board doesn't use sprints: team-managed ones answer 400. */
+async function sprints(board: Board, state: "active" | "future"): Promise<JiraSprint[] | undefined> {
+  if (board.type === "kanban") return undefined;
+  try {
+    const { items } = await agilePages<JiraSprint>(`/rest/agile/1.0/board/${board.id}/sprint`, "values", 10, { state });
+    return items;
+  } catch (error) {
+    if (error instanceof JiraError && error.status === 400) return undefined;
+    throw error;
+  }
+}
+
+function shortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+}
+
+/**
+ * What a board is working on, whatever kind it is:
+ * the running sprints, the next sprint and backlog between sprints, or the open issues of a board without sprints.
+ */
+export async function getBoardIssues(boardId: string): Promise<IssueScope> {
+  const board = await findBoard(boardId);
+  if (!board) return boardNotice("Board", MISSING_BOARD);
+
+  const active = await sprints(board, "active");
+  if (!active) {
+    // Done issues drop off after two weeks, like Jira's own Kanban boards.
+    const { issues, complete } = await boardIssues(`/rest/agile/1.0/board/${board.id}/issue`, {
+      jql: "statusCategory != Done OR statusCategoryChangedDate >= -14d",
+    });
+    return { title: board.name, issues, complete, board };
+  }
+
+  if (active.length) {
+    const loaded = await Promise.all(
+      active.map((sprint) => boardIssues(`/rest/agile/1.0/board/${board.id}/sprint/${sprint.id}/issue`)),
+    );
+    const issues = loaded.flatMap((part) => part.issues);
+    const complete = loaded.every((part) => part.complete);
+    const sprint = { id: String(active[0].id), name: active[0].name };
+    if (active.length === 1) {
+      return { title: `${board.name} · ${sprint.name}`, issues, complete, board, sprint };
+    }
+    // Parallel sprints: each gets its own sections.
+    const groups: IssueGroup[] = active.map((entry, index) => ({
+      title: entry.name,
+      issues: loaded[index].issues,
+      byStatus: true,
+    }));
+    const title = `${board.name} · ${active.length} sprints`;
+    return { title, issues, complete, board, sprint, groups };
+  }
+
+  // Between sprints: what's planned next, then the backlog.
+  const [future, backlog] = await Promise.all([
+    sprints(board, "future"),
+    boardIssues(`/rest/agile/1.0/board/${board.id}/backlog`),
+  ]);
+  const next = future?.[0];
+  const groups: IssueGroup[] = [];
+  let complete = backlog.complete;
+  if (next) {
+    const planned = await boardIssues(`/rest/agile/1.0/board/${board.id}/sprint/${next.id}/issue`);
+    complete &&= planned.complete;
+    groups.push({
+      title: `Next: ${next.name}`,
+      subtitle: next.startDate ? `starts ${shortDate(next.startDate)}` : undefined,
+      issues: planned.issues,
+      byStatus: false,
+    });
+  }
+  groups.push({ title: "Backlog", issues: backlog.issues, byStatus: false });
+  const issues = groups.flatMap((group) => group.issues);
+  return { title: `${board.name} · No sprint running`, issues, complete, board, groups };
+}
+
+export async function getBacklogIssues(boardId: string): Promise<IssueScope> {
+  const board = await findBoard(boardId);
+  if (!board) return boardNotice("Backlog", MISSING_BOARD);
+
+  try {
+    const { issues, complete } = await boardIssues(`/rest/agile/1.0/board/${board.id}/backlog`);
+    return { title: `${board.name} · Backlog`, issues, complete, board };
+  } catch (error) {
+    // Kanban boards without a backlog answer 400.
+    if (error instanceof JiraError && error.status === 400) {
+      return boardNotice(board.name, `${board.name} doesn't have a backlog.`, board);
+    }
+    throw error;
+  }
+}
+
+export async function getMyIssues(): Promise<IssueScope> {
+  const [fields, pointsField, me] = await Promise.all([issueFields(false), getStoryPointsField(), getMyself()]);
+  const site = origin();
+  const issues: Issue[] = [];
+  let nextPageToken: string | undefined;
+
+  for (;;) {
+    const page = await jira<{ issues: JiraIssue[]; nextPageToken?: string }>("/rest/api/3/search/jql", {
+      method: "POST",
+      body: {
+        jql: myIssuesJql(me.accountId),
+        fields: fields.split(","),
+        maxResults: 50,
+        nextPageToken,
+      },
+    });
+    issues.push(...page.issues.map((issue) => toIssue(issue, site, pointsField)));
+    if (environment.isDevelopment) console.debug(`[jira] My Issues page: ${page.issues.length} issues`);
+    nextPageToken = page.nextPageToken;
+    if (!nextPageToken) return { title: "My Issues", issues, complete: true };
+    if (issues.length >= MAX_ISSUES) return { title: "My Issues", issues, complete: false };
+  }
+}
+
+async function assignable(query: Record<string, string>): Promise<User[]> {
+  const users = await jira<JiraUser[]>("/rest/api/3/user/assignable/search", {
+    query: { ...query, maxResults: 100 },
+  });
+  return users.filter((user) => user.active !== false).map((user) => toUser(user) as User);
+}
+
+export function getAssignableUsers(issue: Issue): Promise<User[]> {
+  return assignable({ issueKey: issue.key });
+}
+
+export async function assignIssue(issue: Issue, user?: User): Promise<void> {
+  await jira(`/rest/api/3/issue/${encodeURIComponent(issue.key)}/assignee`, {
+    method: "PUT",
+    body: { accountId: user?.accountId ?? null },
+  });
+}
+
+/** Spaces this account can create issues in. */
+export async function getSpaces(): Promise<Space[]> {
+  const spaces: Space[] = [];
+  for (;;) {
+    const page = await jira<{ values: Space[]; isLast?: boolean }>("/rest/api/3/project/search", {
+      query: { action: "create", orderBy: "name", startAt: spaces.length, maxResults: 50 },
+    });
+    spaces.push(...page.values.map(({ id, key, name }) => ({ id, key, name })));
+    if (page.isLast !== false || page.values.length === 0 || spaces.length >= 500) return spaces;
+  }
+}
+
+type CreateMetaType = Choice & { subtask?: boolean; hierarchyLevel?: number };
+
+export async function getCreateOptions(spaceKey: string): Promise<{ issueTypes: IssueTypeChoice[] }> {
+  const meta = await jira<{ issueTypes?: CreateMetaType[]; values?: CreateMetaType[] }>(
+    `/rest/api/3/issue/createmeta/${encodeURIComponent(spaceKey)}/issuetypes`,
+    { query: { maxResults: 100 } },
+  );
+  const issueTypes = (meta.issueTypes ?? meta.values ?? []).map(({ id, name, subtask, hierarchyLevel }) => ({
+    id,
+    name,
+    // Older sites leave the level out.
+    level: hierarchyLevel ?? (subtask ? -1 : name.toLowerCase() === "epic" ? 1 : 0),
+  }));
+  return { issueTypes };
+}
+
+interface FieldMeta {
+  fieldId: string;
+  name: string;
+  required: boolean;
+  hasDefaultValue?: boolean;
+  allowedValues?: Choice[];
+  defaultValue?: Choice;
+  schema?: { custom?: string };
+}
+
+// Fields the form fills in, or that Jira fills in itself.
+const HANDLED_FIELDS = new Set([
+  "project",
+  "issuetype",
+  "summary",
+  "description",
+  "priority",
+  "assignee",
+  "reporter",
+  "parent",
+  "labels",
+  "duedate",
+]);
+// The sprint is set through the Agile API after creating, whatever its field is called.
+const SPRINT_FIELD = "com.pyxis.greenhopper.jira:gh-sprint";
+
+/** The space's priority scheme default, for create screens that don't say which priority is the default. */
+async function schemeDefaultPriority(spaceKey: string): Promise<string | undefined> {
+  try {
+    const project = await jira<{ id: string }>(`/rest/api/3/project/${encodeURIComponent(spaceKey)}`);
+    const page = await jira<{ values: { id: string; isDefault?: boolean }[] }>("/rest/api/3/priority/search", {
+      query: { projectId: project.id, onlyDefault: "true" },
+    });
+    return page.values.find((value) => value.isDefault)?.id ?? page.values[0]?.id;
+  } catch {
+    // Jira then applies its own default when the priority is left out.
+    return undefined;
+  }
+}
+
+export async function getTypeFields(spaceKey: string, issueTypeId: string): Promise<TypeFields> {
+  const meta = await jira<{ fields?: FieldMeta[]; values?: FieldMeta[] }>(
+    `/rest/api/3/issue/createmeta/${encodeURIComponent(spaceKey)}/issuetypes/${encodeURIComponent(issueTypeId)}`,
+    { query: { maxResults: 200 } },
+  );
+  const fields = meta.fields ?? meta.values ?? [];
+  const priority = fields.find((field) => field.fieldId === "priority");
+  const defaultPriorityId = priority
+    ? (priority.defaultValue?.id ?? (await schemeDefaultPriority(spaceKey)))
+    : undefined;
+  return {
+    priorities: priority?.allowedValues?.map(({ id, name }) => ({ id, name })),
+    defaultPriorityId,
+    missingRequired: fields
+      .filter(
+        (field) =>
+          field.required &&
+          !field.hasDefaultValue &&
+          !HANDLED_FIELDS.has(field.fieldId) &&
+          field.schema?.custom !== SPRINT_FIELD,
+      )
+      .map((field) => field.name),
+    hasParent: fields.some((field) => field.fieldId === "parent"),
+    hasLabels: fields.some((field) => field.fieldId === "labels"),
+    hasDueDate: fields.some((field) => field.fieldId === "duedate"),
+  };
+}
+
+/**
+ * The running and planned sprints of a space's board, for the form's Sprint field.
+ * Uses the first of `boardIds` (the board the form came from, then pinned ones), else the space's first scrum board.
+ */
+/** The first of `boardIds`, else the space's first board, of `type` when given. */
+async function spaceBoardId(spaceKey: string, boardIds: string[], type?: "scrum"): Promise<string | undefined> {
+  if (boardIds[0]) return boardIds[0];
+  const { values } = await jira<{ values: JiraBoard[] }>("/rest/agile/1.0/board", {
+    query: { projectKeyOrId: spaceKey, type, maxResults: 1 },
+  });
+  return values[0] ? String(values[0].id) : undefined;
+}
+
+/**
+ * People who had issues on the space's board in the last 30 days, busiest first, for the form's Assignee field.
+ * Uses the first of `boardIds` (the board the form came from, then pinned ones), else the space's first board.
+ */
+export async function getBoardPeople(spaceKey: string, boardIds: string[]): Promise<User[]> {
+  const boardId = await spaceBoardId(spaceKey, boardIds);
+  if (!boardId) return [];
+  const { items } = await agilePages<{ fields: { assignee?: JiraUser | null } }>(
+    `/rest/agile/1.0/board/${encodeURIComponent(boardId)}/issue`,
+    "issues",
+    300,
+    { jql: "assignee is not EMPTY AND updated >= -30d", fields: "assignee" },
+  );
+  const counts = new Map<string, { user: User; issues: number }>();
+  for (const { fields } of items) {
+    const { assignee } = fields;
+    if (!assignee || assignee.active === false) continue;
+    const entry = counts.get(assignee.accountId) ?? { user: toUser(assignee) as User, issues: 0 };
+    entry.issues++;
+    counts.set(assignee.accountId, entry);
+  }
+  return [...counts.values()]
+    .sort((a, b) => b.issues - a.issues || a.user.displayName.localeCompare(b.user.displayName))
+    .map((entry) => entry.user);
+}
+
+export async function getSprintChoices(spaceKey: string, boardIds: string[]): Promise<SprintChoice[]> {
+  const boardId = await spaceBoardId(spaceKey, boardIds, "scrum");
+  if (!boardId) return [];
+  try {
+    const { items } = await agilePages<JiraSprint>(
+      `/rest/agile/1.0/board/${encodeURIComponent(boardId)}/sprint`,
+      "values",
+      20,
+      {
+        state: "active,future",
+      },
+    );
+    return items.map((sprint) => ({
+      id: String(sprint.id),
+      name: sprint.name,
+      state: sprint.state === "active" ? "active" : "future",
+      startDate: sprint.startDate,
+      endDate: sprint.endDate,
+    }));
+  } catch (error) {
+    // Kanban boards and team-managed boards without sprints answer 400.
+    if (error instanceof JiraError && error.status === 400) return [];
+    throw error;
+  }
+}
+
+const ISSUE_KEY = /^[A-Za-z][A-Za-z0-9_]*-\d+$/;
+
+/**
+ * Open issues of `typeIds` in the space, the types one level above the new issue's, recently updated first.
+ * `search` narrows them by key or summary, for spaces with more than one page of them.
+ */
+export async function getParentChoices(spaceKey: string, typeIds: string[], search = ""): Promise<ParentChoice[]> {
+  if (!typeIds.length) return [];
+  const text = search.trim();
+  const clauses = [
+    `project = ${jqlString(spaceKey)}`,
+    `issuetype in (${typeIds.map(jqlString).join(", ")})`,
+    "statusCategory != Done",
+    ...(ISSUE_KEY.test(text)
+      ? [`key = ${jqlString(text.toUpperCase())}`]
+      : text
+        ? [`summary ~ ${jqlString(`${text}*`)}`]
+        : []),
+  ];
+  try {
+    const page = await jira<{ issues: { key: string; fields: { summary?: string; issuetype?: { name?: string } } }[] }>(
+      "/rest/api/3/search/jql",
+      {
+        method: "POST",
+        body: {
+          jql: `${clauses.join(" AND ")} ORDER BY updated DESC`,
+          fields: ["summary", "issuetype"],
+          maxResults: 100,
+        },
+      },
+    );
+    return page.issues.map((issue) => ({
+      key: issue.key,
+      summary: issue.fields.summary ?? "",
+      issueType: issue.fields.issuetype?.name ?? "Issue",
+    }));
+  } catch (error) {
+    // Jira refuses some search text, like a key that doesn't exist. That's no match, not a failure.
+    if (text && error instanceof JiraError && error.status === 400) return [];
+    throw error;
+  }
+}
+
+/** Labels already used on the site. Jira only lists them site-wide. */
+export async function getLabels(): Promise<string[]> {
+  const labels: string[] = [];
+  for (;;) {
+    const page = await jira<{ values: string[]; isLast?: boolean }>("/rest/api/3/label", {
+      query: { startAt: labels.length, maxResults: 1000 },
+    });
+    labels.push(...page.values);
+    if (page.isLast !== false || page.values.length === 0 || labels.length >= 5000) return labels.sort();
+  }
+}
+
+// Jira's field names, as they come back in errors, to the form's.
+const ERROR_FIELDS: Record<string, keyof NewIssue> = {
+  project: "spaceKey",
+  issuetype: "issueTypeId",
+  summary: "summary",
+  description: "description",
+  priority: "priorityId",
+  assignee: "assigneeId",
+  parent: "parentKey",
+  labels: "labels",
+  duedate: "dueDate",
+};
+
+export async function createIssue(input: NewIssue): Promise<Created> {
+  let created: { id: string; key: string };
+  try {
+    created = await jira<{ id: string; key: string }>("/rest/api/3/issue", {
+      method: "POST",
+      body: {
+        fields: {
+          project: { key: input.spaceKey },
+          issuetype: { id: input.issueTypeId },
+          summary: input.summary,
+          ...(input.description ? { description: markdownToAdf(input.description) } : {}),
+          ...(input.priorityId ? { priority: { id: input.priorityId } } : {}),
+          ...(input.assigneeId ? { assignee: { accountId: input.assigneeId } } : {}),
+          ...(input.parentKey ? { parent: { key: input.parentKey } } : {}),
+          ...(input.labels?.length ? { labels: input.labels } : {}),
+          ...(input.dueDate ? { duedate: input.dueDate } : {}),
+        },
+      },
+    });
+  } catch (error) {
+    if (error instanceof JiraError && Object.keys(error.fields).length) {
+      const fields: Partial<Record<keyof NewIssue, string>> = {};
+      // Fields the form doesn't have go in the toast, since there's nowhere else to show them.
+      const others: string[] = [];
+      for (const [name, message] of Object.entries(error.fields)) {
+        const field = ERROR_FIELDS[name];
+        if (field) fields[field] = message;
+        else others.push(message);
+      }
+      throw new FieldErrors(
+        fields,
+        others.length ? `${others.join(" ")} Continue in Jira to fill it in.` : error.message,
+      );
+    }
+    throw error;
+  }
+
+  let warning: string | undefined;
+  if (input.sprint) {
+    try {
+      await jira(`/rest/agile/1.0/sprint/${input.sprint.id}/issue`, {
+        method: "POST",
+        body: { issues: [created.key] },
+      });
+    } catch (error) {
+      warning = `It's in the backlog, since adding it to ${input.sprint.name} failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  const [fields, pointsField] = await Promise.all([issueFields(false), getStoryPointsField()]);
+  const raw = await jira<JiraIssue>(`/rest/api/3/issue/${encodeURIComponent(created.key)}`, { query: { fields } });
+  return { issue: toIssue(raw, origin(), pointsField), warning };
+}
+
+/**
+ * Jira's own create screen, filled in with the form's values, so the issue can be finished there.
+ * Nothing is saved until it's created in Jira.
+ */
+export function getCreateUrl(input: Partial<NewIssue>): string | undefined {
+  const site = siteOrigin();
+  if (!site) return undefined;
+  const url = new URL("/secure/CreateIssueDetails!init.jspa", site);
+  const params: Record<string, string | undefined> = {
+    pid: input.spaceId,
+    issuetype: input.issueTypeId,
+    summary: input.summary,
+    description: input.description,
+    priority: input.priorityId,
+    assignee: input.assigneeId,
+  };
+  for (const [key, value] of Object.entries(params)) if (value) url.searchParams.set(key, value);
+  return url.href;
+}
