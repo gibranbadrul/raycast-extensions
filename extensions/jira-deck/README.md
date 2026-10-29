@@ -15,7 +15,7 @@ A token without scopes works as is. For a token with scopes, pick these:
 
 - `read:jira-user`, `read:jira-work` and `write:jira-work`
 - `read:board-scope:jira-software`, `read:sprint:jira-software` and `write:sprint:jira-software`
-- `read:board-scope.admin:jira-software`, optional: it lets boards show their columns. Without it, boards are grouped by status and Kanban boards include their backlog.
+- `read:board-scope.admin:jira-software`, optional: it lets boards show their columns. Without it, boards are grouped by status, Kanban boards include their backlog, and resolved issues (like Dropped or Won't Do) are left out after 14 days. Test Connection warns when it's missing.
 - `read:project:jira`, `read:issue-details:jira` and `read:jql:jira`
 
 Leave out the two `write:` scopes for a read-only token. Creating issues and changing assignees then won't work.

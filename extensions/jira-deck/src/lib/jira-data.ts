@@ -322,9 +322,12 @@ export async function getBoardIssues(boardId: string): Promise<IssuePage> {
   const [active, columns] = await Promise.all([sprints(board, "active"), boardColumns(board)]);
   if (!active) {
     // What the board shows: its columns' statuses, with done issues dropping off after two weeks like in Jira.
-    const recent = "(statusCategory != Done OR statusCategoryChangedDate >= -14d)";
     const statusIds = columns?.flatMap((column) => column.statusIds) ?? [];
-    const jql = statusIds.length ? `status in (${statusIds.map(jqlString).join(", ")}) AND ${recent}` : recent;
+    const jql = statusIds.length
+      ? `status in (${statusIds.map(jqlString).join(", ")}) AND (statusCategory != Done OR statusCategoryChangedDate >= -14d)`
+      : // Without the columns, resolved issues count as finished too: statuses like "Dropped" or "Won't Do" set a
+        // resolution even when Jira files them under another category.
+        "((statusCategory != Done AND resolution is EMPTY) OR statusCategoryChangedDate >= -14d OR resolved >= -14d)";
     const { issues, cursor } = await firstPage(`/rest/agile/1.0/board/${board.id}/issue`, { jql });
     return { scope: { title: board.name, issues, complete: true, board, columns }, cursor };
   }

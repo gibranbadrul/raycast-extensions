@@ -10,6 +10,7 @@ const ICONS: Record<CheckStatus, Image.ImageLike> = {
   passed: { source: Icon.CheckCircle, tintColor: Color.Green },
   failed: { source: Icon.XMarkCircle, tintColor: Color.Red },
   skipped: { source: Icon.MinusCircle, tintColor: Color.SecondaryText },
+  warning: { source: Icon.ExclamationMark, tintColor: Color.Yellow },
 };
 
 type Results = Record<string, CheckResult>;
@@ -38,8 +39,9 @@ export default function Command() {
         try {
           set(check.id, { status: "passed", detail: await check.run() });
         } catch (error) {
-          set(check.id, toResult(error));
-          failed = true;
+          const result = toResult(error);
+          set(check.id, result);
+          failed = result.status === "failed";
         }
       }
     })();

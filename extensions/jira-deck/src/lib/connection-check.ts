@@ -6,7 +6,10 @@ import { sourceKey } from "./source";
 
 // The steps Test Connection runs, in order. Each one needs the one before it to pass.
 
-export type CheckStatus = "waiting" | "running" | "passed" | "failed" | "skipped";
+export type CheckStatus = "waiting" | "running" | "passed" | "warning" | "failed" | "skipped";
+
+/** Works, but something optional is off. The next steps still run. */
+export class CheckWarning extends Error {}
 
 export interface CheckResult {
   status: CheckStatus;
@@ -17,7 +20,7 @@ export interface CheckResult {
 }
 
 export interface Check {
-  id: "site" | "account" | "issues" | "boards";
+  id: "site" | "account" | "issues" | "boards" | "columns";
   title: string;
   run: () => Promise<string>;
 }
@@ -81,15 +84,40 @@ export const CHECKS: Check[] = [
       }
     },
   },
+  {
+    id: "columns",
+    title: "Board Columns",
+    async run() {
+      const board = (await pinnedBoards())[0];
+      if (!board) return "Pin a board to check it.";
+      try {
+        const config = await jira<{ columnConfig?: { columns?: unknown[] } }>(
+          `/rest/agile/1.0/board/${encodeURIComponent(board.id)}/configuration`,
+        );
+        const count = config.columnConfig?.columns?.length ?? 0;
+        return `${board.name} shows its ${count} ${count === 1 ? "column" : "columns"}`;
+      } catch (error) {
+        if (error instanceof SetupError || (error instanceof JiraError && (error.status ?? 0) < 500)) {
+          throw new CheckWarning(
+            "Can't read board columns, so boards are grouped by status. A token with scopes needs read:board-scope.admin:jira-software.",
+          );
+        }
+        throw error;
+      }
+    },
+  },
 ];
 
-async function countOnPinnedBoards(jql: string): Promise<string> {
-  let boards: Board[] = [];
+async function pinnedBoards(): Promise<Board[]> {
   try {
-    boards = JSON.parse((await LocalStorage.getItem<string>(`pinned-boards:${sourceKey()}`)) ?? "[]");
+    return JSON.parse((await LocalStorage.getItem<string>(`pinned-boards:${sourceKey()}`)) ?? "[]");
   } catch {
-    // Nothing pinned to compare with.
+    return [];
   }
+}
+
+async function countOnPinnedBoards(jql: string): Promise<string> {
+  const boards = await pinnedBoards();
   if (!boards.length) return "Pin a board to compare with it.";
 
   const counts = await Promise.all(
@@ -109,7 +137,7 @@ async function countOnPinnedBoards(jql: string): Promise<string> {
 
 export function toResult(error: unknown): CheckResult {
   return {
-    status: "failed",
+    status: error instanceof CheckWarning ? "warning" : "failed",
     detail: error instanceof Error ? error.message : String(error),
     setup: error instanceof SetupError,
   };
