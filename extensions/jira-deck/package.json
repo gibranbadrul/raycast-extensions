@@ -15,6 +15,34 @@
   ],
   "commands": [
     {
+      "name": "board",
+      "title": "Board",
+      "subtitle": "Jira Deck",
+      "description": "See what your board is working on: the running sprint, the next sprint and backlog, or open issues on boards without sprints.",
+      "mode": "view"
+    },
+    {
+      "name": "my-issues",
+      "title": "My Issues",
+      "subtitle": "Jira Deck",
+      "description": "See the open issues assigned to you.",
+      "mode": "view"
+    },
+    {
+      "name": "backlog",
+      "title": "Backlog",
+      "subtitle": "Jira Deck",
+      "description": "See the issues in a board's backlog.",
+      "mode": "view"
+    },
+    {
+      "name": "manage-boards",
+      "title": "Manage Boards",
+      "subtitle": "Jira Deck",
+      "description": "Pin the boards you want to see, set the default and create quicklinks.",
+      "mode": "view"
+    },
+    {
       "name": "create-issue",
       "title": "Create Issue",
       "subtitle": "Jira Deck",
