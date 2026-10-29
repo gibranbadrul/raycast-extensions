@@ -13,7 +13,23 @@
   "platforms": [
     "macOS"
   ],
-  "commands": [],
+  "commands": [
+    {
+      "name": "create-issue",
+      "title": "Create Issue",
+      "subtitle": "Jira Deck",
+      "description": "Create a Jira issue without leaving Raycast. Type the summary right in root search.",
+      "mode": "view",
+      "arguments": [
+        {
+          "name": "summary",
+          "placeholder": "Summary",
+          "type": "text",
+          "required": false
+        }
+      ]
+    }
+  ],
   "preferences": [
     {
       "name": "siteUrl",
