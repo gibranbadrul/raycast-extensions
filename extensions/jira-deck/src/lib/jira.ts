@@ -226,22 +226,58 @@ async function toError(response: Response): Promise<Error> {
   }
 }
 
-/** Reads every page of an Agile API list, up to `limit` items. */
+// Pages fetched at once after the first. Enough to be quick without tripping Jira's rate limits.
+const PARALLEL_PAGES = 4;
+
+type AgilePage<T> = { isLast?: boolean; total?: number } & Partial<Record<"values" | "issues", T[]>>;
+
+/**
+ * Reads an Agile API list from `startAt`, up to `limit` items. The first page says how many there are,
+ * so the rest are fetched a few at a time instead of one after another.
+ * `next` is where to continue when `limit` stopped it short.
+ */
 export async function agilePages<T>(
   path: string,
   key: "values" | "issues",
   limit: number,
   query: Record<string, string | number | undefined> = {},
-): Promise<{ items: T[]; complete: boolean }> {
+  startAt = 0,
+): Promise<{ items: T[]; complete: boolean; next?: number }> {
+  const fetchPage = (at: number) =>
+    jira<AgilePage<T>>(path, { query: { ...query, startAt: at, maxResults: 50 } }).then((page) => ({
+      page,
+      values: page[key] ?? [],
+    }));
+
   const items: T[] = [];
+  let { page, values } = await fetchPage(startAt);
+  items.push(...values);
+  // Jira may send fewer than asked for, so the first page sets the step.
+  const step = values.length;
+
+  if (page.total !== undefined && step > 0) {
+    const end = Math.min(page.total, startAt + limit);
+    const starts: number[] = [];
+    for (let at = startAt + step; at < end; at += step) starts.push(at);
+    for (let index = 0; index < starts.length; index += PARALLEL_PAGES) {
+      const pages = await Promise.all(starts.slice(index, index + PARALLEL_PAGES).map(fetchPage));
+      for (const entry of pages) items.push(...entry.values);
+      if (pages.some((entry) => entry.values.length === 0)) break;
+    }
+    const reached = startAt + items.length;
+    return reached >= page.total
+      ? { items, complete: true }
+      : { items: items.slice(0, limit), complete: false, next: startAt + Math.min(items.length, limit) };
+  }
+
+  // Lists without a total, read one page after another.
   for (;;) {
-    const page = await jira<{ isLast?: boolean; total?: number } & Partial<Record<typeof key, T[]>>>(path, {
-      query: { ...query, startAt: items.length, maxResults: 50 },
-    });
-    const values = page[key] ?? [];
-    items.push(...values);
-    const done = page.isLast ?? (values.length === 0 || (page.total !== undefined && items.length >= page.total));
+    const done = page.isLast ?? values.length === 0;
     if (done) return { items, complete: true };
-    if (items.length >= limit) return { items: items.slice(0, limit), complete: false };
+    if (items.length >= limit) {
+      return { items: items.slice(0, limit), complete: false, next: startAt + limit };
+    }
+    ({ page, values } = await fetchPage(startAt + items.length));
+    items.push(...values);
   }
 }
