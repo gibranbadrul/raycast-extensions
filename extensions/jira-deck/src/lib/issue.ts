@@ -7,8 +7,16 @@ export interface User {
 }
 
 export interface Status {
+  /** Matches a board column's statuses. */
+  id?: string;
   name: string;
   category: StatusCategory;
+}
+
+/** A column of a board, as set up in Jira, and the statuses it holds. */
+export interface BoardColumn {
+  name: string;
+  statusIds: string[];
 }
 
 export interface Issue {
@@ -146,8 +154,10 @@ export interface IssueScope {
   board?: Board;
   /** The sprint new issues can go into. */
   sprint?: Sprint;
-  /** Set when the issues are shown in groups. Otherwise there's one section per status. */
+  /** Set when the issues are shown in groups. */
   groups?: IssueGroup[];
+  /** The board's columns, for a section per column like the board in Jira. Otherwise one per status. */
+  columns?: BoardColumn[];
   /** Why the view is empty when that's expected, like a Kanban board without a backlog. */
   notice?: string;
 }

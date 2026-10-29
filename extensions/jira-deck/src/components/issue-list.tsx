@@ -14,7 +14,7 @@ import { useCachedPromise, useCachedState } from "@raycast/utils";
 import { ReactNode, useMemo, useState } from "react";
 import { changeAssignee } from "../lib/assignee";
 import { applyFilters, summarize } from "../lib/filters";
-import { groupByStatus, Issue, IssueGroup, IssueScope, User } from "../lib/issue";
+import { BoardColumn, groupByStatus, Issue, IssueGroup, IssueScope, User } from "../lib/issue";
 import { userIcon } from "../lib/icons";
 import { SetupError } from "../lib/jira";
 import { getMyself, sourceKey } from "../lib/source";
@@ -39,6 +39,19 @@ interface Section {
   title: string;
   subtitle: string;
   issues: Issue[];
+}
+
+/** A group per board column, in the board's order. Statuses the columns don't hold go last, by status. */
+function byColumn(issues: Issue[], columns: BoardColumn[]): IssueGroup[] {
+  const column = (issue: Issue) =>
+    columns.findIndex((entry) => issue.status.id && entry.statusIds.includes(issue.status.id));
+  const groups: IssueGroup[] = columns.map((entry, index) => ({
+    title: entry.name,
+    issues: issues.filter((issue) => column(issue) === index),
+    byStatus: false,
+  }));
+  const rest = issues.filter((issue) => column(issue) < 0);
+  return rest.length ? [...groups, { issues: rest, byStatus: true }] : groups;
 }
 
 /** A section per status, per group when the scope has groups, like "Sprint 8 · In Progress". */
@@ -102,7 +115,10 @@ export function IssueList({ id, load, loadKey = "", boardActions, createDefaults
   const groups = useMemo(() => {
     if (!scope) return [];
     const filter = (issues: Issue[]) => applyFilters(issues, { people, priority }, me?.accountId ?? "");
-    return (scope.groups ?? [{ issues: scope.issues, byStatus: true }]).map((group) => ({
+    const base =
+      scope.groups ??
+      (scope.columns ? byColumn(scope.issues, scope.columns) : [{ issues: scope.issues, byStatus: true }]);
+    return base.map((group) => ({
       ...group,
       issues: filter(group.issues),
     }));

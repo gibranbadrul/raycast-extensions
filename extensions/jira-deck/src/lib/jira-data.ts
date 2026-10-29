@@ -2,6 +2,7 @@ import { getPreferenceValues } from "@raycast/api";
 import { markdownToAdf } from "./adf";
 import {
   Board,
+  BoardColumn,
   Choice,
   Created,
   FieldErrors,
@@ -18,7 +19,7 @@ import {
   TypeFields,
   User,
 } from "./issue";
-import { agilePages, jira, JiraError, jqlString, myIssuesJql, siteOrigin } from "./jira";
+import { agilePages, jira, JiraError, jqlString, myIssuesJql, SetupError, siteOrigin } from "./jira";
 
 // The extension's data from Jira Cloud. Views get it through source.ts.
 
@@ -50,7 +51,7 @@ interface JiraIssue {
   fields: {
     summary?: string;
     issuetype?: { name: string };
-    status?: { name: string; statusCategory?: { key: string } };
+    status?: { id?: string; name: string; statusCategory?: { key: string } };
     priority?: { name: string } | null;
     assignee?: JiraUser | null;
     reporter?: JiraUser | null;
@@ -119,6 +120,7 @@ function toIssue(raw: JiraIssue, origin: string, pointsField?: string): Issue {
     summary: fields.summary ?? "",
     issueType: fields.issuetype?.name ?? "Issue",
     status: {
+      id: fields.status?.id,
       name: fields.status?.name ?? "Unknown",
       category: CATEGORIES[fields.status?.statusCategory?.key ?? ""] ?? "todo",
     },
@@ -247,17 +249,38 @@ function shortDate(iso: string): string {
  * What a board is working on, whatever kind it is:
  * the running sprints, the next sprint and backlog between sprints, or the open issues of a board without sprints.
  */
+/**
+ * The board's columns, left to right, without a Kanban board's Backlog column, which Jira shows apart from the board.
+ * Undefined when Jira won't say, like for a token without the board configuration scope: then every status counts.
+ */
+async function boardColumns(board: Board): Promise<BoardColumn[] | undefined> {
+  try {
+    const config = await jira<{ columnConfig?: { columns?: { name: string; statuses?: { id: string }[] }[] } }>(
+      `/rest/agile/1.0/board/${encodeURIComponent(board.id)}/configuration`,
+    );
+    const columns = (config.columnConfig?.columns ?? [])
+      .map((column) => ({ name: column.name, statusIds: (column.statuses ?? []).map((status) => status.id) }))
+      .filter((column) => column.statusIds.length > 0);
+    if (board.type === "kanban" && columns[0]?.name.trim().toLowerCase() === "backlog") columns.shift();
+    return columns.length ? columns : undefined;
+  } catch (error) {
+    if (error instanceof SetupError || (error instanceof JiraError && (error.status ?? 0) < 500)) return undefined;
+    throw error;
+  }
+}
+
 export async function getBoardIssues(boardId: string): Promise<IssueScope> {
   const board = await findBoard(boardId);
   if (!board) return boardNotice("Board", MISSING_BOARD);
 
-  const active = await sprints(board, "active");
+  const [active, columns] = await Promise.all([sprints(board, "active"), boardColumns(board)]);
   if (!active) {
-    // Done issues drop off after two weeks, like Jira's own Kanban boards.
-    const { issues, complete } = await boardIssues(`/rest/agile/1.0/board/${board.id}/issue`, {
-      jql: "statusCategory != Done OR statusCategoryChangedDate >= -14d",
-    });
-    return { title: board.name, issues, complete, board };
+    // What the board shows: its columns' statuses, with done issues dropping off after two weeks like in Jira.
+    const recent = "(statusCategory != Done OR statusCategoryChangedDate >= -14d)";
+    const statusIds = columns?.flatMap((column) => column.statusIds) ?? [];
+    const jql = statusIds.length ? `status in (${statusIds.map(jqlString).join(", ")}) AND ${recent}` : recent;
+    const { issues, complete } = await boardIssues(`/rest/agile/1.0/board/${board.id}/issue`, { jql });
+    return { title: board.name, issues, complete, board, columns };
   }
 
   if (active.length) {
@@ -268,7 +291,7 @@ export async function getBoardIssues(boardId: string): Promise<IssueScope> {
     const complete = loaded.every((part) => part.complete);
     const sprint = { id: String(active[0].id), name: active[0].name };
     if (active.length === 1) {
-      return { title: `${board.name} · ${sprint.name}`, issues, complete, board, sprint };
+      return { title: `${board.name} · ${sprint.name}`, issues, complete, board, sprint, columns };
     }
     // Parallel sprints: each gets its own sections.
     const groups: IssueGroup[] = active.map((entry, index) => ({
