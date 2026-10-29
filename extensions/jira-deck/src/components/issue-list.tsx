@@ -254,7 +254,8 @@ export function IssueList({ id, load, loadKey = "", boardActions, createDefaults
               // Priority, title and assignee, like Linear. The key and type are in the panel, and search still finds the key.
               icon={{ value: priorityIcon(issue.priority), tooltip: `Priority: ${priorityLabel(issue.priority)}` }}
               title={{ value: issue.summary, tooltip: issue.summary }}
-              keywords={[issue.key]}
+              // A sub-task is found by its parent's key too.
+              keywords={issue.parent ? [issue.key, issue.parent.key] : [issue.key]}
               accessories={[
                 {
                   icon: userIcon(issue.assignee),

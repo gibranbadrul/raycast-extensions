@@ -8,6 +8,7 @@ import {
   FieldErrors,
   Issue,
   IssueGroup,
+  IssueLink,
   IssuePage,
   IssueTypeChoice,
   IssueScope,
@@ -37,6 +38,7 @@ const BASE_FIELDS = [
   "assignee",
   "reporter",
   "parent",
+  "issuelinks",
   "created",
   "updated",
 ];
@@ -45,6 +47,36 @@ interface JiraUser {
   accountId: string;
   displayName: string;
   active?: boolean;
+}
+
+interface JiraLinkedIssue {
+  key: string;
+  fields?: { summary?: string; status?: { name?: string } };
+}
+
+/** One side is set: the other issue, with the relation read from this issue's side. */
+interface JiraLink {
+  type?: { inward?: string; outward?: string };
+  inwardIssue?: JiraLinkedIssue;
+  outwardIssue?: JiraLinkedIssue;
+}
+
+function toLinks(links: JiraLink[] | undefined, origin: string): IssueLink[] | undefined {
+  const result = (links ?? []).flatMap((link) => {
+    const other = link.outwardIssue ?? link.inwardIssue;
+    if (!other) return [];
+    const relation = (link.outwardIssue ? link.type?.outward : link.type?.inward) ?? "Linked to";
+    return [
+      {
+        relation: relation.charAt(0).toUpperCase() + relation.slice(1),
+        key: other.key,
+        summary: other.fields?.summary ?? "",
+        status: other.fields?.status?.name ?? "",
+        url: `${origin}/browse/${other.key}`,
+      },
+    ];
+  });
+  return result.length ? result : undefined;
 }
 
 interface JiraIssue {
@@ -60,6 +92,7 @@ interface JiraIssue {
     parent?: { key: string; fields?: { summary?: string; issuetype?: { name?: string; hierarchyLevel?: number } } };
     /** Company-managed spaces on the Agile API. */
     epic?: { key: string; name?: string; summary?: string } | null;
+    issuelinks?: JiraLink[];
     created: string;
     updated: string;
     [field: string]: unknown;
@@ -108,8 +141,9 @@ function toUser(user?: JiraUser | null): User | undefined {
 function toIssue(raw: JiraIssue, origin: string, pointsField?: string): Issue {
   const { fields } = raw;
   const parentType = fields.parent?.fields?.issuetype;
+  const parentIsEpic = parentType?.hierarchyLevel === 1 || parentType?.name === "Epic";
   const epic =
-    fields.parent && (parentType?.hierarchyLevel === 1 || parentType?.name === "Epic")
+    fields.parent && parentIsEpic
       ? { key: fields.parent.key, summary: fields.parent.fields?.summary ?? "" }
       : fields.epic
         ? { key: fields.epic.key, summary: fields.epic.summary ?? fields.epic.name ?? "" }
@@ -130,6 +164,16 @@ function toIssue(raw: JiraIssue, origin: string, pointsField?: string): Issue {
     assignee: toUser(fields.assignee),
     reporter: toUser(fields.reporter),
     epic,
+    parent:
+      fields.parent && !parentIsEpic
+        ? {
+            key: fields.parent.key,
+            summary: fields.parent.fields?.summary ?? "",
+            issueType: parentType?.name ?? "Issue",
+            url: `${origin}/browse/${fields.parent.key}`,
+          }
+        : undefined,
+    links: toLinks(fields.issuelinks, origin),
     storyPoints: typeof points === "number" ? points : undefined,
     created: fields.created,
     updated: fields.updated,
@@ -265,6 +309,14 @@ async function searchIssues(jql: string, nextPageToken?: string): Promise<MoreIs
     issues: page.issues.map((issue) => toIssue(issue, site, pointsField)),
     cursor: cursor && JSON.stringify(cursor),
   };
+}
+
+/** Issues by key, in the order given. Keys the account can't see are left out. */
+export async function getIssuesByKey(keys: string[]): Promise<Issue[]> {
+  if (!keys.length) return [];
+  const { issues } = await searchIssues(`key in (${keys.map(jqlString).join(", ")})`);
+  const byKey = new Map(issues.map((issue) => [issue.key, issue]));
+  return keys.flatMap((key) => byKey.get(key) ?? []);
 }
 
 /** The next page of a view, from the cursor its previous page gave. */

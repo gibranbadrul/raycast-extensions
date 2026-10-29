@@ -30,9 +30,22 @@ export interface Issue {
   assignee?: User;
   reporter?: User;
   epic?: { key: string; summary: string };
+  /** A parent below epics, like a sub-task's story or task. Epic parents are in `epic`. */
+  parent?: { key: string; summary: string; issueType: string; url: string };
+  /** Linked work items, in Jira's order. */
+  links?: IssueLink[];
   storyPoints?: number;
   created: string;
   updated: string;
+  url: string;
+}
+
+/** Another issue linked to this one, seen from this one: "Blocks", "Is blocked by", "Relates to". */
+export interface IssueLink {
+  relation: string;
+  key: string;
+  summary: string;
+  status: string;
   url: string;
 }
 

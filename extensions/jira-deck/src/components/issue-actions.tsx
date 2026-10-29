@@ -4,6 +4,7 @@ import { userIcon } from "../lib/icons";
 import { Issue, User } from "../lib/issue";
 import { PRIORITY_FILTERS, PriorityLevel } from "../lib/priority";
 import { getAssignableUsers } from "../lib/source";
+import { ShowLinkedIssuesAction } from "./linked-issues";
 
 interface Props {
   issue: Issue;
@@ -30,6 +31,7 @@ export function IssueActions({
     <ActionPanel title={issue.key}>
       <ActionPanel.Section>
         <Action.OpenInBrowser title="Open in Jira" url={issue.url} />
+        <ShowLinkedIssuesAction issue={issue} />
         <Action.CopyToClipboard title="Copy Key" content={issue.key} shortcut={Keyboard.Shortcut.Common.Copy} />
         <Action.CopyToClipboard title="Copy URL" content={issue.url} shortcut={Keyboard.Shortcut.Common.CopyName} />
       </ActionPanel.Section>
