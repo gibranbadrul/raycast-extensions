@@ -1,4 +1,4 @@
-import { Cache, environment, getPreferenceValues } from "@raycast/api";
+import { Cache, getPreferenceValues } from "@raycast/api";
 
 // Talks to Jira Cloud with the user's email and API token. Nothing here logs requests or responses.
 
@@ -119,13 +119,6 @@ async function routeUrl(route: Route, origin: string, path: string): Promise<URL
   return url;
 }
 
-/** Development builds only: the route, status and sign-in result of each call. Never the token or the data. */
-function debug(method: string, path: string, route: Route, response: Response) {
-  if (!environment.isDevelopment) return;
-  const login = response.headers.get("X-Seraph-LoginReason") ?? "-";
-  console.debug(`[jira] ${method} ${path} via ${route} -> ${response.status} (login: ${login})`);
-}
-
 /** Where calls go for the current token: the site itself, or Atlassian's gateway for tokens with scopes. */
 export function routeInUse(): Route {
   const { origin, authorization } = config();
@@ -153,7 +146,6 @@ export async function jira<T>(path: string, { method = "GET", query, body }: Req
       if (value !== undefined) url.searchParams.set(name, String(value));
     }
     response = await send(url, origin, { method, authorization, body });
-    debug(method, path, route, response);
     if (!signInFailed(response)) {
       if (route !== preferred) cache.set(key, route);
       break;

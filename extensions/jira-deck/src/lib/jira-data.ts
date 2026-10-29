@@ -1,4 +1,4 @@
-import { environment } from "@raycast/api";
+import { getPreferenceValues } from "@raycast/api";
 import { markdownToAdf } from "./adf";
 import {
   Board,
@@ -138,9 +138,22 @@ function origin(): string {
   return siteOrigin() ?? "";
 }
 
-export async function getMyself(): Promise<User> {
-  const me = await jira<JiraUser>("/rest/api/3/myself");
-  return { accountId: me.accountId, displayName: me.displayName };
+// The signed-in user, asked once per launch and account: lists, suggestions and searches all need it.
+const myself = new Map<string, Promise<User>>();
+
+export function getMyself(): Promise<User> {
+  const key = `${origin()}|${getPreferenceValues<Preferences>().email?.trim() ?? ""}`;
+  let me = myself.get(key);
+  if (!me) {
+    me = jira<JiraUser>("/rest/api/3/myself").then((user) => ({
+      accountId: user.accountId,
+      displayName: user.displayName,
+    }));
+    // A failure is asked again next time, after the user fixed their preferences.
+    me.catch(() => myself.delete(key));
+    myself.set(key, me);
+  }
+  return me;
 }
 
 function toBoard(board: JiraBoard): Board {
@@ -323,7 +336,6 @@ export async function getMyIssues(): Promise<IssueScope> {
       },
     });
     issues.push(...page.issues.map((issue) => toIssue(issue, site, pointsField)));
-    if (environment.isDevelopment) console.debug(`[jira] My Issues page: ${page.issues.length} issues`);
     nextPageToken = page.nextPageToken;
     if (!nextPageToken) return { title: "My Issues", issues, complete: true };
     if (issues.length >= MAX_ISSUES) return { title: "My Issues", issues, complete: false };
