@@ -25,9 +25,25 @@ export const PRIORITY_FILTERS: { level: PriorityLevel; title: string }[] = [
   { level: "other", title: "Other" },
 ];
 
-/** Priority names are set per tenant, so an unfamiliar name is "other", never quietly "low". */
+// Numbered schemes count down from P0, the most urgent.
+const NUMBERED: PriorityLevel[] = ["urgent", "high", "medium", "low", "low", "low"];
+
+/**
+ * Priority names are set per tenant, so an unfamiliar name is "other", never quietly "low".
+ * Knows the standard names, numbered ones like "P2", and names that mix both, like "P1 - High".
+ */
 export function priorityLevel(name?: string): PriorityLevel {
-  return (name && LEVELS[name.trim().toLowerCase()]) || "other";
+  const text = name?.trim().toLowerCase();
+  if (!text) return "other";
+  if (LEVELS[text]) return LEVELS[text];
+  const numbered = text.match(/\bp(\d)\b/);
+  if (numbered) return NUMBERED[Number(numbered[1])] ?? "low";
+  return (
+    text
+      .split(/[^a-z]+/)
+      .map((word) => LEVELS[word])
+      .find(Boolean) ?? "other"
+  );
 }
 
 const ICONS: Record<PriorityLevel, Image.ImageLike> = {

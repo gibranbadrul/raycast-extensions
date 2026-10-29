@@ -90,13 +90,15 @@ Type the summary after "Create Issue" in root search to start with it filled in.
 
 Priorities are always shown with their name, next to an icon:
 
-| Jira priority                      | Icon                              |
-| ---------------------------------- | --------------------------------- |
-| Highest, Urgent, Blocker, Critical | Red circled up arrow              |
-| High, Major                        | Orange up arrow                   |
-| Medium, Normal                     | Yellow dash                       |
-| Low, Lowest, Minor, Trivial        | Blue down arrow                   |
-| Anything else                      | Grey circle, with Jira's own name |
+| Jira priority                             | Icon                              |
+| ----------------------------------------- | --------------------------------- |
+| Highest, Urgent, Blocker, Critical, P0    | Red circled up arrow              |
+| High, Major, P1                           | Orange up arrow                   |
+| Medium, Normal, P2                        | Yellow dash                       |
+| Low, Lowest, Minor, Trivial, P3 and below | Blue down arrow                   |
+| Anything else                             | Grey circle, with Jira's own name |
+
+Names that mix both, like "P1 - High", count too.
 
 ## Development
 
