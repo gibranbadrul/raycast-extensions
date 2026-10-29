@@ -56,6 +56,13 @@
           "required": false
         }
       ]
+    },
+    {
+      "name": "test-connection",
+      "title": "Test Connection",
+      "subtitle": "Jira Deck",
+      "description": "Check that your Jira site, email and API token work.",
+      "mode": "view"
     }
   ],
   "preferences": [
