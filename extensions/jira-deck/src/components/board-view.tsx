@@ -1,7 +1,7 @@
 import { Action, ActionPanel, Icon, Keyboard, List, useNavigation } from "@raycast/api";
 import { useState } from "react";
 import { boardIcon } from "../lib/icons";
-import { IssueScope } from "../lib/issue";
+import { IssuePage, IssueScope } from "../lib/issue";
 import { usePinnedBoards } from "../lib/pins";
 import { BoardPicker } from "./board-picker";
 import { CreateIssueDefaults } from "./create-issue-form";
@@ -10,7 +10,7 @@ import { IssueList } from "./issue-list";
 interface Props {
   /** Keeps each command's filters separate. */
   id: string;
-  load: (boardId: string) => Promise<IssueScope>;
+  load: (boardId: string) => Promise<IssuePage>;
   /** From a quicklink. Shown even when it isn't pinned. */
   boardId?: string;
   createDefaults?: CreateIssueDefaults;

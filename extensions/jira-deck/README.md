@@ -66,7 +66,7 @@ What Board shows depends on the board:
 | Between sprints                                      | The next planned sprint, then the backlog                          |
 | No sprints (Kanban, or team-managed without sprints) | Open issues, plus issues done in the last 14 days                  |
 
-The dropdown in the search bar filters by assignee. Search matches the issue key or title.
+The dropdown in the search bar filters by assignee. Search matches the issue key or title. Long lists load 100 issues at a time as you scroll, and their count says "loaded" until the last one is in. Search and filters apply to the issues loaded so far.
 
 The panel on the right shows the issue's details. Open the issue in Jira to read its description.
 

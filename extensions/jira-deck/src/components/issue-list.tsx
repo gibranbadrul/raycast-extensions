@@ -14,10 +14,10 @@ import { useCachedPromise, useCachedState } from "@raycast/utils";
 import { ReactNode, useMemo, useState } from "react";
 import { changeAssignee } from "../lib/assignee";
 import { applyFilters, summarize } from "../lib/filters";
-import { BoardColumn, groupByStatus, Issue, IssueGroup, IssueScope, User } from "../lib/issue";
+import { BoardColumn, groupByStatus, Issue, IssueGroup, IssuePage, IssueScope, User } from "../lib/issue";
 import { userIcon } from "../lib/icons";
 import { SetupError } from "../lib/jira";
-import { getMyself, sourceKey } from "../lib/source";
+import { getMoreIssues, getMyself, sourceKey } from "../lib/source";
 import { PRIORITY_FILTERS, PriorityLevel, priorityIcon, priorityLabel } from "../lib/priority";
 import { CreateIssueDefaults, CreateIssueForm } from "./create-issue-form";
 import { IssueActions } from "./issue-actions";
@@ -26,12 +26,19 @@ import { IssueDetail } from "./issue-detail";
 interface Props {
   /** Keeps each command's filters separate. */
   id: string;
-  load: () => Promise<IssueScope>;
+  /** The first page. Later ones come from its cursor as the list is scrolled. */
+  load: () => Promise<IssuePage>;
   /** What `load` shows, like a board's ID. Part of the cache key. */
   loadKey?: string;
   /** Switch Board and friends, for board views. */
   boardActions?: (scope?: IssueScope) => ReactNode;
   createDefaults?: CreateIssueDefaults;
+}
+
+/** One loaded page. Only the first carries the view itself. */
+interface Loaded {
+  scope?: IssueScope;
+  issues: Issue[];
 }
 
 interface Section {
@@ -76,24 +83,51 @@ export function IssueList({ id, load, loadKey = "", boardActions, createDefaults
   // Part of every cache key, so switching accounts never shows the other one's issues.
   const key = sourceKey();
   const {
-    data: scope,
+    data: pages,
     error,
     isLoading,
     revalidate,
+    pagination,
   } = useCachedPromise(
     (what: string, cacheKey: string) => {
       void what;
       void cacheKey;
-      return load();
+      return async ({
+        page,
+        cursor,
+      }: {
+        page: number;
+        cursor?: string;
+      }): Promise<{ data: Loaded[]; hasMore: boolean; cursor?: string }> => {
+        if (page === 0 || !cursor) {
+          const first = await load();
+          return {
+            data: [{ scope: first.scope, issues: first.scope.issues }],
+            hasMore: !!first.cursor,
+            cursor: first.cursor,
+          };
+        }
+        const more = await getMoreIssues(cursor);
+        return { data: [{ issues: more.issues }], hasMore: !!more.cursor, cursor: more.cursor };
+      };
     },
     [loadKey, key],
     {
       // Shown in the empty view when there's nothing else to show, and as a toast over older results.
       onError(error) {
-        if (scope) showToast({ style: Toast.Style.Failure, title: "Couldn't refresh", message: error.message });
+        if (pages?.length) {
+          showToast({ style: Toast.Style.Failure, title: "Couldn't load issues", message: error.message });
+        }
       },
     },
   );
+  // The first page says what the view is, the others only add issues.
+  const scope = useMemo((): IssueScope | undefined => {
+    const first = pages?.[0]?.scope;
+    if (!first) return undefined;
+    const complete = first.complete && !pagination?.hasMore;
+    return { ...first, issues: pages.flatMap((page) => page.issues), complete };
+  }, [pages, pagination?.hasMore]);
   const { data: me } = useCachedPromise(
     (cacheKey: string) => {
       void cacheKey;
@@ -166,6 +200,7 @@ export function IssueList({ id, load, loadKey = "", boardActions, createDefaults
 
   return (
     <List
+      pagination={pagination && { ...pagination, pageSize: 50 }}
       isLoading={isLoading}
       isShowingDetail={issues.length > 0}
       navigationTitle={title}

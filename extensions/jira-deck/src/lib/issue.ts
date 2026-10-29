@@ -162,6 +162,18 @@ export interface IssueScope {
   notice?: string;
 }
 
+/** The first page of a view. `cursor` is where to continue when there are more issues than fit in a page. */
+export interface IssuePage {
+  scope: IssueScope;
+  cursor?: string;
+}
+
+/** A later page of a view's issues. */
+export interface MoreIssues {
+  issues: Issue[];
+  cursor?: string;
+}
+
 const CATEGORY_ORDER: Record<StatusCategory, number> = { inProgress: 0, todo: 1, done: 2 };
 
 /** Groups by status, with work in progress first and done last. Statuses keep the order they first appear in. */

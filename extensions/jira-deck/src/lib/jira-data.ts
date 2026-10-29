@@ -8,8 +8,10 @@ import {
   FieldErrors,
   Issue,
   IssueGroup,
+  IssuePage,
   IssueTypeChoice,
   IssueScope,
+  MoreIssues,
   NewIssue,
   ParentChoice,
   Space,
@@ -219,14 +221,58 @@ function boardNotice(title: string, notice: string, board?: Board): IssueScope {
   return { title, issues: [], complete: true, board, notice };
 }
 
+/** Issues per page of a list that loads more as it's scrolled. */
+const PAGE_SIZE = 100;
+
+/** Where a paged list continues. Kept as a string, so Raycast can cache it with the list. */
+type Cursor =
+  | { kind: "agile"; path: string; query: Record<string, string>; startAt: number }
+  | { kind: "search"; jql: string; token: string };
+
 async function boardIssues(
   path: string,
   query: Record<string, string> = {},
-): Promise<{ issues: Issue[]; complete: boolean }> {
+  { startAt = 0, limit = MAX_ISSUES } = {},
+): Promise<{ issues: Issue[]; complete: boolean; cursor?: string }> {
   const [fields, pointsField] = await Promise.all([issueFields(true), getStoryPointsField()]);
-  const { items, complete } = await agilePages<JiraIssue>(path, "issues", MAX_ISSUES, { ...query, fields });
+  const { items, complete, next } = await agilePages<JiraIssue>(path, "issues", limit, { ...query, fields }, startAt);
   const site = origin();
-  return { issues: items.map((issue) => toIssue(issue, site, pointsField)), complete };
+  const cursor: Cursor | undefined = next === undefined ? undefined : { kind: "agile", path, query, startAt: next };
+  return {
+    issues: items.map((issue) => toIssue(issue, site, pointsField)),
+    complete,
+    cursor: cursor && JSON.stringify(cursor),
+  };
+}
+
+/** The first page of one Agile API list, for views that load the rest as they're scrolled. */
+function firstPage(path: string, query: Record<string, string> = {}) {
+  return boardIssues(path, query, { limit: PAGE_SIZE });
+}
+
+/** Search issues, one page at a time. */
+async function searchIssues(jql: string, nextPageToken?: string): Promise<MoreIssues> {
+  const [fields, pointsField] = await Promise.all([issueFields(false), getStoryPointsField()]);
+  const page = await jira<{ issues: JiraIssue[]; nextPageToken?: string }>("/rest/api/3/search/jql", {
+    method: "POST",
+    body: { jql, fields: fields.split(","), maxResults: PAGE_SIZE, nextPageToken },
+  });
+  const site = origin();
+  const cursor: Cursor | undefined = page.nextPageToken
+    ? { kind: "search", jql, token: page.nextPageToken }
+    : undefined;
+  return {
+    issues: page.issues.map((issue) => toIssue(issue, site, pointsField)),
+    cursor: cursor && JSON.stringify(cursor),
+  };
+}
+
+/** The next page of a view, from the cursor its previous page gave. */
+export async function getMoreIssues(cursor: string): Promise<MoreIssues> {
+  const at = JSON.parse(cursor) as Cursor;
+  if (at.kind === "search") return searchIssues(at.jql, at.token);
+  const { issues, cursor: next } = await boardIssues(at.path, at.query, { startAt: at.startAt, limit: PAGE_SIZE });
+  return { issues, cursor: next };
 }
 
 /** A board's sprints in one state. Undefined when the board doesn't use sprints: team-managed ones answer 400. */
@@ -269,9 +315,9 @@ async function boardColumns(board: Board): Promise<BoardColumn[] | undefined> {
   }
 }
 
-export async function getBoardIssues(boardId: string): Promise<IssueScope> {
+export async function getBoardIssues(boardId: string): Promise<IssuePage> {
   const board = await findBoard(boardId);
-  if (!board) return boardNotice("Board", MISSING_BOARD);
+  if (!board) return { scope: boardNotice("Board", MISSING_BOARD) };
 
   const [active, columns] = await Promise.all([sprints(board, "active"), boardColumns(board)]);
   if (!active) {
@@ -279,10 +325,18 @@ export async function getBoardIssues(boardId: string): Promise<IssueScope> {
     const recent = "(statusCategory != Done OR statusCategoryChangedDate >= -14d)";
     const statusIds = columns?.flatMap((column) => column.statusIds) ?? [];
     const jql = statusIds.length ? `status in (${statusIds.map(jqlString).join(", ")}) AND ${recent}` : recent;
-    const { issues, complete } = await boardIssues(`/rest/agile/1.0/board/${board.id}/issue`, { jql });
-    return { title: board.name, issues, complete, board, columns };
+    const { issues, cursor } = await firstPage(`/rest/agile/1.0/board/${board.id}/issue`, { jql });
+    return { scope: { title: board.name, issues, complete: true, board, columns }, cursor };
   }
 
+  if (active.length === 1) {
+    const sprint = { id: String(active[0].id), name: active[0].name };
+    const { issues, cursor } = await firstPage(`/rest/agile/1.0/board/${board.id}/sprint/${sprint.id}/issue`);
+    const scope = { title: `${board.name} · ${sprint.name}`, issues, complete: true, board, sprint, columns };
+    return { scope, cursor };
+  }
+
+  // Several lists in one view, so they load whole rather than page by page.
   if (active.length) {
     const loaded = await Promise.all(
       active.map((sprint) => boardIssues(`/rest/agile/1.0/board/${board.id}/sprint/${sprint.id}/issue`)),
@@ -290,9 +344,6 @@ export async function getBoardIssues(boardId: string): Promise<IssueScope> {
     const issues = loaded.flatMap((part) => part.issues);
     const complete = loaded.every((part) => part.complete);
     const sprint = { id: String(active[0].id), name: active[0].name };
-    if (active.length === 1) {
-      return { title: `${board.name} · ${sprint.name}`, issues, complete, board, sprint, columns };
-    }
     // Parallel sprints: each gets its own sections.
     const groups: IssueGroup[] = active.map((entry, index) => ({
       title: entry.name,
@@ -300,7 +351,7 @@ export async function getBoardIssues(boardId: string): Promise<IssueScope> {
       byStatus: true,
     }));
     const title = `${board.name} · ${active.length} sprints`;
-    return { title, issues, complete, board, sprint, groups };
+    return { scope: { title, issues, complete, board, sprint, groups } };
   }
 
   // Between sprints: what's planned next, then the backlog.
@@ -323,46 +374,29 @@ export async function getBoardIssues(boardId: string): Promise<IssueScope> {
   }
   groups.push({ title: "Backlog", issues: backlog.issues, byStatus: false });
   const issues = groups.flatMap((group) => group.issues);
-  return { title: `${board.name} · No sprint running`, issues, complete, board, groups };
+  return { scope: { title: `${board.name} · No sprint running`, issues, complete, board, groups } };
 }
 
-export async function getBacklogIssues(boardId: string): Promise<IssueScope> {
+export async function getBacklogIssues(boardId: string): Promise<IssuePage> {
   const board = await findBoard(boardId);
-  if (!board) return boardNotice("Backlog", MISSING_BOARD);
+  if (!board) return { scope: boardNotice("Backlog", MISSING_BOARD) };
 
   try {
-    const { issues, complete } = await boardIssues(`/rest/agile/1.0/board/${board.id}/backlog`);
-    return { title: `${board.name} · Backlog`, issues, complete, board };
+    const { issues, cursor } = await firstPage(`/rest/agile/1.0/board/${board.id}/backlog`);
+    return { scope: { title: `${board.name} · Backlog`, issues, complete: true, board }, cursor };
   } catch (error) {
     // Kanban boards without a backlog answer 400.
     if (error instanceof JiraError && error.status === 400) {
-      return boardNotice(board.name, `${board.name} doesn't have a backlog.`, board);
+      return { scope: boardNotice(board.name, `${board.name} doesn't have a backlog.`, board) };
     }
     throw error;
   }
 }
 
-export async function getMyIssues(): Promise<IssueScope> {
-  const [fields, pointsField, me] = await Promise.all([issueFields(false), getStoryPointsField(), getMyself()]);
-  const site = origin();
-  const issues: Issue[] = [];
-  let nextPageToken: string | undefined;
-
-  for (;;) {
-    const page = await jira<{ issues: JiraIssue[]; nextPageToken?: string }>("/rest/api/3/search/jql", {
-      method: "POST",
-      body: {
-        jql: myIssuesJql(me.accountId),
-        fields: fields.split(","),
-        maxResults: 50,
-        nextPageToken,
-      },
-    });
-    issues.push(...page.issues.map((issue) => toIssue(issue, site, pointsField)));
-    nextPageToken = page.nextPageToken;
-    if (!nextPageToken) return { title: "My Issues", issues, complete: true };
-    if (issues.length >= MAX_ISSUES) return { title: "My Issues", issues, complete: false };
-  }
+export async function getMyIssues(): Promise<IssuePage> {
+  const me = await getMyself();
+  const { issues, cursor } = await searchIssues(myIssuesJql(me.accountId));
+  return { scope: { title: "My Issues", issues, complete: true }, cursor };
 }
 
 async function assignable(query: Record<string, string>): Promise<User[]> {
