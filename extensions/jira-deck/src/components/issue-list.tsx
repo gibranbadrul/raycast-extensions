@@ -152,7 +152,15 @@ export function IssueList({ id, load, loadKey = "", boardActions, createDefaults
 
   const groups = useMemo(() => {
     if (!scope) return [];
-    const filter = (issues: Issue[]) => applyFilters(issues, { people, priority }, me?.accountId ?? "");
+    // Pages are read by offset, so an issue that moves up the board between two pages comes back twice.
+    // Raycast keeps only the first item with an ID, so each issue is listed once, where it showed up first.
+    const seen = new Set<string>();
+    const filter = (issues: Issue[]) =>
+      applyFilters(issues, { people, priority }, me?.accountId ?? "").filter((issue) => {
+        if (seen.has(issue.id)) return false;
+        seen.add(issue.id);
+        return true;
+      });
     const base =
       scope.groups ??
       (scope.columns ? byColumn(scope.issues, scope.columns) : [{ issues: scope.issues, byStatus: true }]);
