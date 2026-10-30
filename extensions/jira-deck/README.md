@@ -67,7 +67,7 @@ What Board shows depends on the board:
 | Between sprints                                      | The next planned sprint, then the backlog                          |
 | No sprints (Kanban, or team-managed without sprints) | Open issues, plus issues done in the last 14 days                  |
 
-The dropdown in the search bar filters by assignee. Search matches the issue key or title. Long lists load 100 issues at a time as you scroll, and their count says "loaded" until the last one is in. Search and filters apply to the issues loaded so far.
+The dropdown in the search bar filters Board and Backlog by assignee. Search matches the issue key or title. Long lists load 100 issues at a time as you scroll, and their count says "loaded" until the last one is in. Search and filters apply to the issues loaded so far.
 
 The panel on the right shows the issue's details, from its summary down, including a sub-task's parent, and ends with its linked work items by relation, like "Is blocked by" or "Relates to", up to five each. Click one to open it in Jira. **Show Linked Work Items** (⌘L) lists all of them with their own details, so you can follow a chain of blockers. Open the issue in Jira to read its description.
 

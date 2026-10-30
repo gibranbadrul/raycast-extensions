@@ -33,6 +33,8 @@ interface Props {
   /** Switch Board and friends, for board views. */
   boardActions?: (scope?: IssueScope) => ReactNode;
   createDefaults?: CreateIssueDefaults;
+  /** False for lists of one person's issues, where filtering by assignee means nothing. */
+  assigneeFilter?: boolean;
 }
 
 /** One loaded page. Only the first carries the view itself. */
@@ -79,7 +81,7 @@ function toSections(groups: IssueGroup[]): Section[] {
   });
 }
 
-export function IssueList({ id, load, loadKey = "", boardActions, createDefaults }: Props) {
+export function IssueList({ id, load, loadKey = "", boardActions, createDefaults, assigneeFilter = true }: Props) {
   // Part of every cache key, so switching accounts never shows the other one's issues.
   const key = sourceKey();
   const {
@@ -136,7 +138,9 @@ export function IssueList({ id, load, loadKey = "", boardActions, createDefaults
     [key],
     { onError: () => undefined },
   );
-  const [people, setPeople] = useCachedState(`${id}:people`, "all");
+  const [chosenPeople, setPeople] = useCachedState(`${id}:people`, "all");
+  // A filter left over from before it was hidden would otherwise still apply.
+  const people = assigneeFilter ? chosenPeople : "all";
   const [priority, setPriority] = useCachedState<PriorityLevel | undefined>(`${id}:priority`, undefined);
 
   // Selects an issue created from here once it's in the list.
@@ -207,21 +211,23 @@ export function IssueList({ id, load, loadKey = "", boardActions, createDefaults
       selectedItemId={focusId}
       searchBarPlaceholder="Search by key or title"
       searchBarAccessory={
-        <List.Dropdown tooltip="Assignee" value={people} onChange={setPeople}>
-          <List.Dropdown.Item title="Everyone" value="all" icon={Icon.TwoPeople} />
-          <List.Dropdown.Item title="Assigned to Me" value="me" icon={userIcon(me)} />
-          <List.Dropdown.Item title="Unassigned" value="unassigned" icon={userIcon()} />
-          <List.Dropdown.Section title="People">
-            {assignees.map((person) => (
-              <List.Dropdown.Item
-                key={person.accountId}
-                title={person.displayName}
-                value={person.accountId}
-                icon={userIcon(person)}
-              />
-            ))}
-          </List.Dropdown.Section>
-        </List.Dropdown>
+        assigneeFilter ? (
+          <List.Dropdown tooltip="Assignee" value={people} onChange={setPeople}>
+            <List.Dropdown.Item title="Everyone" value="all" icon={Icon.TwoPeople} />
+            <List.Dropdown.Item title="Assigned to Me" value="me" icon={userIcon(me)} />
+            <List.Dropdown.Item title="Unassigned" value="unassigned" icon={userIcon()} />
+            <List.Dropdown.Section title="People">
+              {assignees.map((person) => (
+                <List.Dropdown.Item
+                  key={person.accountId}
+                  title={person.displayName}
+                  value={person.accountId}
+                  icon={userIcon(person)}
+                />
+              ))}
+            </List.Dropdown.Section>
+          </List.Dropdown>
+        ) : undefined
       }
     >
       {error && !scope ? (
@@ -232,7 +238,9 @@ export function IssueList({ id, load, loadKey = "", boardActions, createDefaults
           title={scope?.notice ?? (scope?.issues.length ? "No Matching Issues" : "No Issues")}
           description={
             scope?.issues.length
-              ? "Try another assignee or priority filter."
+              ? assigneeFilter
+                ? "Try another assignee or priority filter."
+                : "Try another priority filter."
               : boardAction
                 ? "Press ⌘B to switch boards, or ⌘⇧B to pin more."
                 : undefined
