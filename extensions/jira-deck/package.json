@@ -3,7 +3,7 @@
   "name": "jira-deck",
   "title": "Jira Deck",
   "description": "Browse the Jira boards you pick, with or without sprints, plus your issues and backlog, in a keyboard-first split view.",
-  "icon": "extension-icon.png",
+  "icon": "jira-icon.png",
   "author": "gibranbadrul",
   "categories": [
     "Productivity",
