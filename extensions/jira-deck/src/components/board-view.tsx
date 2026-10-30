@@ -11,13 +11,13 @@ interface Props {
   /** Keeps each command's filters separate. */
   id: string;
   load: (boardId: string) => Promise<IssuePage>;
-  /** From a quicklink. Shown even when it isn't pinned. */
+  /** From Manage Boards. Shown even when it isn't pinned. */
   boardId?: string;
   createDefaults?: CreateIssueDefaults;
 }
 
 /**
- * One board at a time: the one a quicklink names, else the default pinned board.
+ * One board at a time: the one it was opened with, else the default pinned board.
  * With nothing pinned, the user picks boards first instead of getting one they don't work on.
  */
 export function BoardView({ id, load, boardId: launchedWith, createDefaults }: Props) {

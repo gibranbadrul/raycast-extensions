@@ -1,5 +1,5 @@
 import { Action, ActionPanel, Color, Icon, Keyboard, launchCommand, LaunchType, List } from "@raycast/api";
-import { createDeeplink, useCachedPromise } from "@raycast/utils";
+import { useCachedPromise } from "@raycast/utils";
 import { useEffect, useMemo, useState } from "react";
 import { boardIcon, boardSubtitle } from "../lib/icons";
 import { Board, SpaceActivity } from "../lib/issue";
@@ -244,11 +244,6 @@ function BoardActions({
         </ActionPanel.Section>
       )}
       <ActionPanel.Section>
-        <Action.CreateQuicklink
-          title="Create Quicklink"
-          shortcut={{ modifiers: ["cmd", "shift"], key: "l" }}
-          quicklink={{ name: board.name, link: createDeeplink({ command: "board", context: { boardId: board.id } }) }}
-        />
         {url && <Action.OpenInBrowser title="Open in Jira" url={url} shortcut={Keyboard.Shortcut.Common.Open} />}
         <Action
           title="Refresh"

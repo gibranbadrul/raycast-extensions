@@ -22,14 +22,14 @@ Leave out the two `write:` scopes for a read-only token. Creating issues and cha
 
 ## Commands
 
-| Command         | Shows                                                                          |
-| --------------- | ------------------------------------------------------------------------------ |
-| Board           | What a board is working on, grouped by status (see below)                      |
-| My Issues       | Open issues assigned to you                                                    |
-| Backlog         | Issues in a board's backlog                                                    |
-| Manage Boards   | The boards you picked: pin, unpin, reorder, set the default, create quicklinks |
-| Create Issue    | A form for a new issue                                                         |
-| Test Connection | Whether your site, email, API token and board access work                      |
+| Command         | Shows                                                       |
+| --------------- | ----------------------------------------------------------- |
+| Board           | What a board is working on, grouped by status (see below)   |
+| My Issues       | Open issues assigned to you                                 |
+| Backlog         | Issues in a board's backlog                                 |
+| Manage Boards   | The boards you picked: pin, unpin, reorder, set the default |
+| Create Issue    | A form for a new issue                                      |
+| Test Connection | Whether your site, email, API token and board access work   |
 
 ## Shortcuts
 
@@ -44,7 +44,6 @@ Leave out the two `write:` scopes for a read-only token. Creating issues and cha
 | ⌘B       | Switch between your pinned boards (Board and Backlog) |
 | ⌘⇧B      | Manage boards                                         |
 | ⌘⇧P      | Pin or unpin a board                                  |
-| ⌘⇧L      | Create a quicklink to a board                         |
 | ⌘⇧F      | Filter by priority                                    |
 | ⌘L       | Show linked work items                                |
 | ⌘R       | Refresh                                               |
@@ -55,7 +54,6 @@ A space can have several boards, and sprints belong to a board. Jira Deck only s
 
 - **Picking boards.** The first time Board or Backlog opens, it lists every board you can see, with boards from spaces you were assignee, reporter or watcher in over the last 30 days, or viewed lately, suggested at the top. ↵ pins a board and opens it, ⌘⇧P pins it and stays, so you can pick several.
 - **The default board.** Board and Backlog open the first pinned board. Make Default, Move Higher and Move Lower in Manage Boards change it. ⌘B switches between pinned boards, ⌘1 to ⌘9 in that menu.
-- **Quicklinks.** Create Quicklink on a board puts it straight into Raycast's root search, like "Payments Board". It opens that board even when it isn't pinned, and Pin Board pins it from there.
 
 Pins are stored on this Mac, per Jira site and email.
 

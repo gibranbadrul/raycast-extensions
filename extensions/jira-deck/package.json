@@ -39,7 +39,7 @@
       "name": "manage-boards",
       "title": "Manage Boards",
       "subtitle": "Jira Deck",
-      "description": "Pin the boards you want to see, set the default and create quicklinks.",
+      "description": "Pin the boards you want to see and set the default.",
       "mode": "view"
     },
     {
