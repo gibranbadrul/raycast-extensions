@@ -119,12 +119,6 @@ async function routeUrl(route: Route, origin: string, path: string): Promise<URL
   return url;
 }
 
-/** Where calls go for the current token: the site itself, or Atlassian's gateway for tokens with scopes. */
-export function routeInUse(): Route {
-  const { origin, authorization } = config();
-  return cache.get(routeKey(origin, authorization)) === "gateway" ? "gateway" : "site";
-}
-
 /** Calls a Jira REST path, like "/rest/api/3/myself", and returns the parsed JSON. */
 export async function jira<T>(path: string, { method = "GET", query, body }: RequestOptions = {}): Promise<T> {
   const { origin, authorization } = config();

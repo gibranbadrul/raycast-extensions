@@ -1,7 +1,7 @@
 import { getPreferenceValues, LocalStorage } from "@raycast/api";
 import { getMyself } from "./jira-data";
 import { Board } from "./issue";
-import { jira, JiraError, myIssuesJql, routeInUse, SetupError, siteOrigin } from "./jira";
+import { jira, JiraError, myIssuesJql, SetupError, siteOrigin } from "./jira";
 import { sourceKey } from "./source";
 
 // The steps Test Connection runs, in order. Each one needs the one before it to pass.
@@ -42,8 +42,7 @@ export const CHECKS: Check[] = [
     title: "Email and API Token",
     async run() {
       const me = await getMyself();
-      // The account ID is what My Issues searches by, so it's shown to compare with the one in Jira.
-      return `Signed in as ${me.displayName} (account ID ${me.accountId || "missing"})`;
+      return `Signed in as ${me.displayName}`;
     },
   },
   {
@@ -51,19 +50,13 @@ export const CHECKS: Check[] = [
     title: "Your Issues",
     async run() {
       // The same search as My Issues, so an empty list there can be told apart from a filter.
-      const jql = myIssuesJql((await getMyself()).accountId);
       const page = await jira<{ issues: unknown[]; nextPageToken?: string }>("/rest/api/3/search/jql", {
         method: "POST",
-        body: { jql, fields: ["summary"], maxResults: 50 },
+        body: { jql: myIssuesJql((await getMyself()).accountId), fields: ["summary"], maxResults: 50 },
       });
-      const route = `via ${routeInUse()}`;
-      if (page.issues.length) {
-        const count = `${page.issues.length}${page.nextPageToken ? "+" : ""}`;
-        return `${count} open ${page.issues.length === 1 ? "issue" : "issues"} assigned to you (${route})`;
-      }
-      // Asks the pinned boards the same question through the Agile API, to tell a search problem from no issues.
-      const onBoards = await countOnPinnedBoards(jql.replace(/ ORDER BY .*$/, ""));
-      return `Search found no open issues assigned to you (${route}). ${onBoards}`;
+      if (!page.issues.length) return "No open issues are assigned to you";
+      const count = `${page.issues.length}${page.nextPageToken ? "+" : ""}`;
+      return `${count} open ${page.issues.length === 1 ? "issue" : "issues"} assigned to you`;
     },
   },
   {
@@ -95,12 +88,10 @@ export const CHECKS: Check[] = [
           `/rest/agile/1.0/board/${encodeURIComponent(board.id)}/configuration`,
         );
         const count = config.columnConfig?.columns?.length ?? 0;
-        return `${board.name} shows its ${count} ${count === 1 ? "column" : "columns"}`;
+        return `${board.name}: ${count} ${count === 1 ? "column" : "columns"}`;
       } catch (error) {
         if (error instanceof SetupError || (error instanceof JiraError && (error.status ?? 0) < 500)) {
-          throw new CheckWarning(
-            "Can't read board columns, so boards are grouped by status. A token with scopes needs read:board-scope.admin:jira-software.",
-          );
+          throw new CheckWarning("Grouped by status. Add read:board-scope.admin:jira-software to see columns.");
         }
         throw error;
       }
@@ -114,25 +105,6 @@ async function pinnedBoards(): Promise<Board[]> {
   } catch {
     return [];
   }
-}
-
-async function countOnPinnedBoards(jql: string): Promise<string> {
-  const boards = await pinnedBoards();
-  if (!boards.length) return "Pin a board to compare with it.";
-
-  const counts = await Promise.all(
-    boards.slice(0, 5).map(async (board) => {
-      try {
-        const page = await jira<{ total?: number }>(`/rest/agile/1.0/board/${encodeURIComponent(board.id)}/issue`, {
-          query: { jql, maxResults: 1, fields: "summary" },
-        });
-        return `${board.name}: ${page.total ?? 0}`;
-      } catch (error) {
-        return `${board.name}: ${error instanceof Error ? error.message : "failed"}`;
-      }
-    }),
-  );
-  return `Your pinned boards say ${counts.join(", ")}.`;
 }
 
 export function toResult(error: unknown): CheckResult {

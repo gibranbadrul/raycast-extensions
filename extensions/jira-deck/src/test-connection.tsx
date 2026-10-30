@@ -66,13 +66,6 @@ export default function Command() {
       {!needsSetup && (
         <Action title="Open Extension Preferences" icon={Icon.Gear} onAction={openExtensionPreferences} />
       )}
-      <Action.CopyToClipboard
-        title="Copy Results"
-        shortcut={Keyboard.Shortcut.Common.Copy}
-        content={CHECKS.map(
-          (check) => `${check.title}: ${results[check.id].status} ${results[check.id].detail ?? ""}`,
-        ).join("\n")}
-      />
       <Action.OpenInBrowser title="Create API Token" url={TOKEN_URL} />
     </ActionPanel>
   );
