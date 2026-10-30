@@ -59,7 +59,7 @@ export function BoardView({ id, load, boardId: launchedWith, createDefaults }: P
         )}
         <Action.Push
           title="Manage Boards"
-          icon={Icon.Pin}
+          icon={Icon.Tack}
           shortcut={{ modifiers: ["cmd", "shift"], key: "b" }}
           target={
             <BoardPicker
@@ -73,7 +73,7 @@ export function BoardView({ id, load, boardId: launchedWith, createDefaults }: P
         {current && !pins.isPinned(current) && (
           <Action
             title="Pin Board"
-            icon={Icon.Pin}
+            icon={Icon.Tack}
             shortcut={Keyboard.Shortcut.Common.Pin}
             onAction={() => pins.pin(current)}
           />

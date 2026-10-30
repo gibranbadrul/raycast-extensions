@@ -122,7 +122,7 @@ export function BoardPicker({ firstRun = false, onOpen = openBoardCommand }: Pro
               ...(pins.boards[0]?.id === board.id && !firstRun
                 ? [{ tag: { value: "Default", color: Color.Blue } }]
                 : []),
-              { icon: { source: Icon.Pin, tintColor: Color.Orange }, tooltip: "Pinned" },
+              { icon: { source: Icon.Tack, tintColor: Color.Orange }, tooltip: "Pinned" },
             ]}
             actions={actionsFor(board)}
           />
@@ -190,7 +190,7 @@ function BoardActions({
         {firstRun ? (
           <Action
             title="Pin and Open"
-            icon={Icon.Pin}
+            icon={Icon.Tack}
             onAction={async () => {
               if (!pinned) await pins.pin(board);
               onOpen(board);
@@ -202,14 +202,14 @@ function BoardActions({
         {pinned ? (
           <Action
             title="Unpin Board"
-            icon={Icon.PinDisabled}
+            icon={Icon.TackDisabled}
             shortcut={Keyboard.Shortcut.Common.Pin}
             onAction={() => pins.unpin(board)}
           />
         ) : (
           <Action
             title="Pin Board"
-            icon={Icon.Pin}
+            icon={Icon.Tack}
             shortcut={Keyboard.Shortcut.Common.Pin}
             onAction={() => pins.pin(board)}
           />
