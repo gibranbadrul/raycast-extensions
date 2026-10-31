@@ -314,7 +314,14 @@ async function searchIssues(jql: string, nextPageToken?: string): Promise<MoreIs
 /** Issues by key, in the order given. Keys the account can't see are left out. */
 export async function getIssuesByKey(keys: string[]): Promise<Issue[]> {
   if (!keys.length) return [];
-  const { issues } = await searchIssues(`key in (${keys.map(jqlString).join(", ")})`);
+  const jql = `key in (${keys.map(jqlString).join(", ")})`;
+  const issues: Issue[] = [];
+  let token: string | undefined;
+  do {
+    const page = await searchIssues(jql, token);
+    issues.push(...page.issues);
+    token = page.cursor ? (JSON.parse(page.cursor) as { token?: string }).token : undefined;
+  } while (token);
   const byKey = new Map(issues.map((issue) => [issue.key, issue]));
   return keys.flatMap((key) => byKey.get(key) ?? []);
 }
