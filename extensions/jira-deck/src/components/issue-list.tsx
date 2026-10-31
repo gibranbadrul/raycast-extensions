@@ -1,15 +1,4 @@
-import {
-  Action,
-  ActionPanel,
-  Icon,
-  Keyboard,
-  launchCommand,
-  LaunchType,
-  List,
-  openExtensionPreferences,
-  showToast,
-  Toast,
-} from "@raycast/api";
+import { Action, ActionPanel, Icon, Keyboard, List, showToast, Toast } from "@raycast/api";
 import { useCachedPromise, useCachedState } from "@raycast/utils";
 import { ReactNode, useMemo, useState } from "react";
 import { changeAssignee } from "../lib/assignee";
@@ -22,6 +11,7 @@ import { PRIORITY_FILTERS, PriorityLevel, priorityIcon, priorityLabel } from "..
 import { CreateIssueDefaults, CreateIssueForm } from "./create-issue-form";
 import { IssueActions } from "./issue-actions";
 import { IssueDetail } from "./issue-detail";
+import { ExtensionActions, PreferencesAction, RetryActions } from "./extension-actions";
 
 interface Props {
   /** Keeps each command's filters separate. */
@@ -250,13 +240,20 @@ export function IssueList({ id, load, loadKey = "", boardActions, createDefaults
                 ? "Try another assignee or priority filter."
                 : "Try another priority filter."
               : boardAction
-                ? "Press ⌘B to switch boards, or ⌘⇧B to pin more."
+                ? "Press ⌘B to switch boards, or ⇧⌘B to pin more."
                 : undefined
           }
           actions={
             <ActionPanel>
               {createAction}
+              <Action
+                title="Refresh"
+                icon={Icon.ArrowClockwise}
+                shortcut={Keyboard.Shortcut.Common.Refresh}
+                onAction={revalidate}
+              />
               {boardAction}
+              <ExtensionActions />
             </ActionPanel>
           }
         />
@@ -299,10 +296,6 @@ export function IssueList({ id, load, loadKey = "", boardActions, createDefaults
   );
 }
 
-function testConnection() {
-  return launchCommand({ name: "test-connection", type: LaunchType.UserInitiated });
-}
-
 function ErrorView({ error, onRetry }: { error: Error; onRetry: () => void }) {
   const setup = error instanceof SetupError;
   return (
@@ -314,19 +307,15 @@ function ErrorView({ error, onRetry }: { error: Error; onRetry: () => void }) {
         <ActionPanel>
           {setup ? (
             <>
-              <Action title="Open Extension Preferences" icon={Icon.Gear} onAction={openExtensionPreferences} />
-              <Action title="Test Connection" icon={Icon.Plug} onAction={testConnection} />
+              <PreferencesAction />
               <Action.OpenInBrowser
                 title="Create API Token"
                 url="https://id.atlassian.com/manage-profile/security/api-tokens"
               />
+              <ExtensionActions preferences={false} />
             </>
           ) : (
-            <>
-              <Action title="Try Again" icon={Icon.ArrowClockwise} onAction={onRetry} />
-              <Action title="Open Extension Preferences" icon={Icon.Gear} onAction={openExtensionPreferences} />
-              <Action title="Test Connection" icon={Icon.Plug} onAction={testConnection} />
-            </>
+            <RetryActions onRetry={onRetry} />
           )}
         </ActionPanel>
       }

@@ -1,6 +1,6 @@
 import { Action, ActionPanel, Color, Icon, Image, Keyboard, List, openExtensionPreferences } from "@raycast/api";
 import { useEffect, useState } from "react";
-import { CHECKS, CheckResult, CheckStatus, toResult } from "./lib/connection-check";
+import { CHECKS, CheckResult, CheckStatus, toResult } from "../lib/connection-check";
 
 const TOKEN_URL = "https://id.atlassian.com/manage-profile/security/api-tokens";
 
@@ -17,7 +17,8 @@ type Results = Record<string, CheckResult>;
 
 const waiting = (): Results => Object.fromEntries(CHECKS.map((check) => [check.id, { status: "waiting" }]));
 
-export default function Command() {
+/** Checks the setup step by step. Opened from any action panel's Extension section, or when loading fails. */
+export function TestConnection() {
   const [results, setResults] = useState<Results>(waiting);
   const [run, setRun] = useState(0);
 

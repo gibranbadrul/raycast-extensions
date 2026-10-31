@@ -5,6 +5,7 @@ import { Issue } from "../lib/issue";
 import { priorityIcon, priorityLabel } from "../lib/priority";
 import { getIssuesByKey, sourceKey } from "../lib/source";
 import { byRelation, IssueDetail, STATUS_COLORS } from "./issue-detail";
+import { ExtensionActions } from "./extension-actions";
 
 /** Opens an issue's linked work items, from any list that shows issues. */
 export function ShowLinkedIssuesAction({ issue }: { issue: Issue }) {
@@ -81,8 +82,11 @@ export function LinkedIssues({ issue }: { issue: Issue }) {
                 }
                 actions={
                   <ActionPanel title={link.key}>
-                    <Action.OpenInBrowser title="Open in Jira" url={link.url} />
-                    {entry && <ShowLinkedIssuesAction issue={entry} />}
+                    <Action.OpenInBrowser
+                      title="Open in Jira"
+                      url={link.url}
+                      shortcut={Keyboard.Shortcut.Common.Open}
+                    />
                     <Action.CopyToClipboard
                       title="Copy Key"
                       content={link.key}
@@ -93,12 +97,14 @@ export function LinkedIssues({ issue }: { issue: Issue }) {
                       content={link.url}
                       shortcut={Keyboard.Shortcut.Common.CopyName}
                     />
+                    {entry && <ShowLinkedIssuesAction issue={entry} />}
                     <Action
                       title="Refresh"
                       icon={Icon.ArrowClockwise}
                       shortcut={Keyboard.Shortcut.Common.Refresh}
                       onAction={revalidate}
                     />
+                    <ExtensionActions />
                   </ActionPanel>
                 }
               />

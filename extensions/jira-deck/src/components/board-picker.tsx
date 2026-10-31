@@ -5,6 +5,7 @@ import { boardIcon, boardSubtitle } from "../lib/icons";
 import { Board, SpaceActivity } from "../lib/issue";
 import { PinnedBoards, usePinnedBoards } from "../lib/pins";
 import { getBoards, getBoardUrl, getSpaceActivity, sourceKey } from "../lib/source";
+import { ExtensionActions, RetryActions } from "./extension-actions";
 
 interface Props {
   /** Board or Backlog opened with nothing pinned: ↵ pins the board and opens it. */
@@ -97,7 +98,7 @@ export function BoardPicker({ firstRun = false, onOpen = openBoardCommand }: Pro
           description={error.message}
           actions={
             <ActionPanel>
-              <Action title="Try Again" icon={Icon.ArrowClockwise} onAction={revalidate} />
+              <RetryActions onRetry={revalidate} />
             </ActionPanel>
           }
         />
@@ -252,6 +253,7 @@ function BoardActions({
           onAction={onRefresh}
         />
       </ActionPanel.Section>
+      <ExtensionActions />
     </ActionPanel>
   );
 }

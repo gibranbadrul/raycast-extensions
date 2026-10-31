@@ -5,6 +5,7 @@ import { Issue, User } from "../lib/issue";
 import { PRIORITY_FILTERS, PriorityLevel } from "../lib/priority";
 import { getAssignableUsers } from "../lib/source";
 import { ShowLinkedIssuesAction } from "./linked-issues";
+import { ExtensionActions } from "./extension-actions";
 
 interface Props {
   issue: Issue;
@@ -30,10 +31,10 @@ export function IssueActions({
   return (
     <ActionPanel title={issue.key}>
       <ActionPanel.Section>
-        <Action.OpenInBrowser title="Open in Jira" url={issue.url} />
-        <ShowLinkedIssuesAction issue={issue} />
+        <Action.OpenInBrowser title="Open in Jira" url={issue.url} shortcut={Keyboard.Shortcut.Common.Open} />
         <Action.CopyToClipboard title="Copy Key" content={issue.key} shortcut={Keyboard.Shortcut.Common.Copy} />
         <Action.CopyToClipboard title="Copy URL" content={issue.url} shortcut={Keyboard.Shortcut.Common.CopyName} />
+        <ShowLinkedIssuesAction issue={issue} />
       </ActionPanel.Section>
       <ActionPanel.Section>
         {createAction}
@@ -76,6 +77,7 @@ export function IssueActions({
           onAction={onRefresh}
         />
       </ActionPanel.Section>
+      <ExtensionActions />
     </ActionPanel>
   );
 }

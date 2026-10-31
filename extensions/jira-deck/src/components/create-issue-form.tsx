@@ -1,4 +1,16 @@
-import { Action, ActionPanel, Clipboard, Color, Form, Icon, open, showToast, Toast, useNavigation } from "@raycast/api";
+import {
+  Action,
+  ActionPanel,
+  Clipboard,
+  Color,
+  Form,
+  Icon,
+  Keyboard,
+  open,
+  showToast,
+  Toast,
+  useNavigation,
+} from "@raycast/api";
 import { useCachedPromise, useCachedState, useForm } from "@raycast/utils";
 import { useEffect, useRef, useState } from "react";
 import { typeIcon, userIcon } from "../lib/icons";
@@ -18,6 +30,7 @@ import {
   getTypeFields,
   sourceKey,
 } from "../lib/source";
+import { ExtensionActions } from "./extension-actions";
 
 const UNASSIGNED = "unassigned";
 const BACKLOG = "backlog";
@@ -148,12 +161,12 @@ export function CreateIssueForm({ defaults = {}, draftValues, summary, onCreated
         toast.message = warning ?? issue.summary;
         toast.primaryAction = {
           title: "Open in Jira",
-          shortcut: { modifiers: ["cmd"], key: "o" },
+          shortcut: Keyboard.Shortcut.Common.Open,
           onAction: () => open(issue.url),
         };
         toast.secondaryAction = {
           title: "Copy Key",
-          shortcut: { modifiers: ["cmd", "shift"], key: "c" },
+          shortcut: Keyboard.Shortcut.Common.Copy,
           onAction: () => Clipboard.copy(issue.key),
         };
         setLastSpace(values.spaceKey);
@@ -404,6 +417,7 @@ export function CreateIssueForm({ defaults = {}, draftValues, summary, onCreated
           <Action.SubmitForm title="Create Issue" icon={Icon.Plus} onSubmit={handleSubmit} />
           {/* For fields the form doesn't have: nothing is saved until it's created in Jira. */}
           <Action.SubmitForm title="Continue in Jira" icon={Icon.Globe} onSubmit={continueInJira} />
+          <ExtensionActions />
         </ActionPanel>
       }
     >
