@@ -750,9 +750,8 @@ export async function createIssue(input: NewIssue): Promise<Created> {
     }
   }
 
-  const [fields, pointsField] = await Promise.all([issueFields(false), getStoryPointsField()]);
-  const raw = await jira<JiraIssue>(`/rest/api/3/issue/${encodeURIComponent(created.key)}`, { query: { fields } });
-  return { issue: toIssue(raw, origin(), pointsField), warning };
+  const issue = { id: created.id, key: created.key, summary: input.summary, url: `${origin()}/browse/${created.key}` };
+  return { issue, warning };
 }
 
 /**
