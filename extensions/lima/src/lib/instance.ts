@@ -38,6 +38,11 @@ export interface Instance {
     os?: string;
     mounts?: Mount[] | null;
     portForwards?: PortForward[] | null;
+    /** The images Lima can boot it from, one per architecture. */
+    images?: { location: string }[] | null;
+    containerd?: { archives?: { location: string }[] | null };
+    /** Lima disks attached to it, by name, or as `{ name }`. */
+    additionalDisks?: (string | { name?: string })[] | null;
   };
 }
 
@@ -82,6 +87,19 @@ export function statusIcon(status: string, pending?: Pending): Image.ImageLike {
   if (status === "Stopped") return { source: Icon.Circle, tintColor: Color.SecondaryText };
   if (status === NOT_CREATED) return { source: Icon.Dot, tintColor: Color.SecondaryText };
   return { source: Icon.Warning, tintColor: Color.Red };
+}
+
+/** The names of the Lima disks (volumes) attached to an instance. */
+export function volumeNames(instance: Instance): string[] {
+  return (instance.config?.additionalDisks ?? []).flatMap((disk) =>
+    typeof disk === "string" ? [disk] : disk?.name ? [disk.name] : [],
+  );
+}
+
+/** "254 MiB" under a GiB, "2.3 GiB" over. */
+export function size(bytes: number): string {
+  if (bytes < 1024 ** 3) return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MiB`;
+  return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
 }
 
 /** "6 GiB", or "1.5 GiB" when it isn't whole. */
