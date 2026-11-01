@@ -1,7 +1,10 @@
 import { Action, ActionPanel, Detail, Icon, Keyboard } from "@raycast/api";
 import { ReactNode } from "react";
 import { Instance, isRunning, Pending, shellCommand, sshCommand } from "../lib/instance";
+import { CacheList } from "./cache-list";
 import { ExtensionActions } from "./extension-actions";
+import { LogsView } from "./logs-view";
+import { VolumeList } from "./volume-list";
 
 interface Props {
   instance: Instance;
@@ -70,6 +73,12 @@ export function InstanceActions({
             target={<Detail navigationTitle={instance.name} markdown={notes(instance.message)} />}
           />
         )}
+        <Action.Push
+          title="Show Logs"
+          icon={Icon.Document}
+          shortcut={{ modifiers: ["cmd"], key: "l" }}
+          target={<LogsView name={instance.name} />}
+        />
       </ActionPanel.Section>
       {!pending && (
         <ActionPanel.Section>
@@ -116,6 +125,8 @@ export function InstanceActions({
       </ActionPanel.Section>
       <ActionPanel.Section>
         {createAction}
+        <Action.Push title="Image Cache" icon={Icon.HardDrive} target={<CacheList />} />
+        <Action.Push title="Volumes" icon={Icon.HardDrive} target={<VolumeList />} />
         {!pending && refreshAction}
       </ActionPanel.Section>
       <ExtensionActions />

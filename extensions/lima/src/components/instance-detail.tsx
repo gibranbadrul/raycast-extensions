@@ -1,5 +1,5 @@
 import { Icon, List } from "@raycast/api";
-import { gib, Instance, Pending, statusColor, tildify, vmTypeLabel } from "../lib/instance";
+import { gib, Instance, Pending, statusColor, tildify, vmTypeLabel, volumeNames } from "../lib/instance";
 
 /** Per list, so the panel stays readable for an instance with many mounts. */
 const ROWS_PER_LIST = 5;
@@ -68,6 +68,14 @@ export function InstanceDetail({
           <List.Item.Detail.Metadata.Label title="Disk" text={gib(instance.disk)} icon={Icon.HardDrive} />
           <List.Item.Detail.Metadata.Separator />
           {ssh && <List.Item.Detail.Metadata.Label title="SSH" text={ssh} />}
+          {volumeNames(instance).map((name, index) => (
+            <List.Item.Detail.Metadata.Label
+              key={`volume:${name}`}
+              title={index === 0 ? "Volumes" : ""}
+              text={name}
+              icon={Icon.HardDrive}
+            />
+          ))}
           {mounts.length === 0 && <List.Item.Detail.Metadata.Label title="Mounts" text="None" />}
           {mounts.slice(0, ROWS_PER_LIST).map((mount, index) => (
             <List.Item.Detail.Metadata.Label

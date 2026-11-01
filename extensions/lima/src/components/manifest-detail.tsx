@@ -67,6 +67,14 @@ export function ManifestDetail({ manifest, pending }: { manifest: Manifest; pend
                   text={`${port.guest} → ${port.host}`}
                 />
               ))}
+              {content.volumes.map((name, index) => (
+                <List.Item.Detail.Metadata.Label
+                  key={`volume:${name}`}
+                  title={index === 0 ? "Volumes" : ""}
+                  text={name}
+                  icon={Icon.HardDrive}
+                />
+              ))}
               <List.Item.Detail.Metadata.Label title="Provision" text={scripts(content.provisions)} />
             </>
           )}

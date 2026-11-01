@@ -1,7 +1,7 @@
 import { Action, ActionPanel, Alert, confirmAlert, Icon, Keyboard, List, showToast, Toast } from "@raycast/api";
 import { useCachedPromise, useCachedState } from "@raycast/utils";
 import { useMemo, useState } from "react";
-import { gib, groupByStatus, Instance, statusIcon, summarize } from "../lib/instance";
+import { gib, groupByStatus, Instance, statusIcon, summarize, volumeNames } from "../lib/instance";
 import { deleteInstance, listInstances, openShell, restartInstance, startInstance, stopInstance } from "../lib/lima";
 import { listManifests } from "../lib/manifests";
 import { useTasks } from "../lib/tasks";
@@ -14,6 +14,15 @@ import { ManifestForm } from "./manifest-form";
 import { ManifestList } from "./manifest-list";
 
 type StatusFilter = "all" | "Running" | "Stopped";
+
+/** What deleting takes with it, and what it leaves: volumes outlive instances. */
+function deleteMessage(instance: Instance): string {
+  const volumes = volumeNames(instance);
+  const kept = volumes.length
+    ? ` Its ${volumes.length === 1 ? "volume" : "volumes"} ${volumes.join(" and ")} ${volumes.length === 1 ? "stays" : "stay"}, data and all.`
+    : "";
+  return `Its disk and everything on it are deleted too. This can't be undone.${kept}`;
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -65,7 +74,7 @@ export function InstanceList() {
   async function remove(instance: Instance) {
     const confirmed = await confirmAlert({
       title: `Delete ${instance.name}?`,
-      message: "Its disk and everything on it are deleted too. This can't be undone.",
+      message: deleteMessage(instance),
       icon: Icon.Trash,
       primaryAction: { title: "Delete", style: Alert.ActionStyle.Destructive },
     });

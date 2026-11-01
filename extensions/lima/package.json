@@ -41,6 +41,20 @@
       "subtitle": "Lima",
       "description": "Run your own lima.yaml files from one folder, and see the instance each one made.",
       "mode": "view"
+    },
+    {
+      "name": "image-cache",
+      "title": "Image Cache",
+      "subtitle": "Lima",
+      "description": "See the disk images Lima downloaded, which instances use them, and free the space they take.",
+      "mode": "view"
+    },
+    {
+      "name": "volumes",
+      "title": "Volumes",
+      "subtitle": "Lima",
+      "description": "See the Lima disks there are, which instances use them and the space they take, and delete the ones you don't need.",
+      "mode": "view"
     }
   ],
   "preferences": [

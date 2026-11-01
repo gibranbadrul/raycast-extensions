@@ -21,6 +21,8 @@ export interface TemplateFile {
   mounts: { location: string; writable: boolean }[];
   /** Guest port → host port. */
   ports: { guest: number; host: number }[];
+  /** Lima disks (volumes) it attaches, by name. */
+  volumes: string[];
 }
 
 /** Lima's size units, in GiB. A bare number is bytes. */
@@ -95,6 +97,9 @@ export async function readTemplateFile(path: string): Promise<TemplateFile> {
     provisions: provisions.map((entry) => (entry && typeof entry.mode === "string" ? entry.mode : "system")),
     mounts: list(template.mounts).flatMap((entry) =>
       typeof entry.location === "string" ? [{ location: entry.location, writable: entry.writable === true }] : [],
+    ),
+    volumes: (Array.isArray(template.additionalDisks) ? template.additionalDisks : []).flatMap((entry) =>
+      typeof entry === "string" ? [entry] : entry && typeof entry.name === "string" ? [entry.name] : [],
     ),
     ports: list(template.portForwards).flatMap((entry) =>
       typeof entry.guestPort === "number"
