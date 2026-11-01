@@ -7,6 +7,7 @@ import { listManifests, Manifest, manifestsFolder, manifestStatus } from "../lib
 import { useTasks } from "../lib/tasks";
 import { ErrorView } from "./error-view";
 import { ExtensionActions, PreferencesAction } from "./extension-actions";
+import { LogsView } from "./logs-view";
 import { ManifestDetail } from "./manifest-detail";
 import { ManifestForm } from "./manifest-form";
 import { NewManifestForm } from "./new-manifest-form";
@@ -213,6 +214,14 @@ export function ManifestList() {
                       </ActionPanel.Section>
                     )}
                     <ActionPanel.Section>
+                      {manifest.instance && (
+                        <Action.Push
+                          title="Show Logs"
+                          icon={Icon.Document}
+                          shortcut={{ modifiers: ["cmd"], key: "l" }}
+                          target={<LogsView name={manifest.name} />}
+                        />
+                      )}
                       {!manifest.error && (
                         <Action.Open
                           title="Edit Manifest"

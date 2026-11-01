@@ -95,6 +95,37 @@ export async function deleteInstance(name: string): Promise<void> {
   await limactl(["delete", "--force", name]);
 }
 
+/** One line of `limactl disk ls --json`: a Lima disk, which outlives the instances it's attached to. */
+export interface LimaDisk {
+  name: string;
+  /** Bytes, as created or resized. */
+  size: number;
+  format: string;
+  dir: string;
+  /** The running instance holding it, if any. Empty while no instance has it locked. */
+  instance: string;
+  /** Where it's mounted inside the instance. */
+  mountPoint: string;
+}
+
+export async function listDisks(): Promise<LimaDisk[]> {
+  const stdout = await limactl(["disk", "ls", "--json"]);
+  return stdout
+    .split("\n")
+    .filter((line) => line.trim().startsWith("{"))
+    .map((line) => JSON.parse(line) as LimaDisk);
+}
+
+/** Without --force, so limactl refuses a disk a running instance holds. */
+export async function deleteDisk(name: string): Promise<void> {
+  await limactl(["disk", "delete", "--tty=false", name]);
+}
+
+/** Empties Lima's whole download cache. Instances keep running: each has its own copy of its disk. */
+export async function pruneCache(): Promise<void> {
+  await limactl(["prune"]);
+}
+
 export interface NewInstance {
   name: string;
   /** What to create from, as limactl takes it: `template:default`, or the path of a manifest. */
@@ -128,24 +159,47 @@ export async function createdAt(instance: Instance): Promise<number | undefined>
 /** Lima's own rule for instance names. */
 export const NAME_PATTERN = /^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$/;
 
-/** Opens a new window in the terminal from the preferences and runs `limactl shell` there. */
-export async function openShell(name: string): Promise<void> {
-  // The name already matches NAME_PATTERN, so only the path may need quoting.
+/** limactl as the user's shell would run it: the configured path, quoted when it needs to be. */
+function limactlCommand(): string {
   const path = limactlPath();
-  const limactl = path === "limactl" ? path : `'${path.replace(/'/g, `'\\''`)}'`;
-  const command = `${limactl} shell ${name}`.replace(/[\\"]/g, "\\$&");
+  return path === "limactl" ? path : quote(path);
+}
+
+/** Single quotes for a shell. */
+export function quote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/** Opens a new window in the terminal from the preferences and runs `command` there, as the user would type it. */
+export async function openInTerminal(command: string): Promise<void> {
+  const escaped = command.replace(/[\\"]/g, "\\$&");
   if (getPreferenceValues<Preferences>().terminal === "iTerm") {
     await runAppleScript(`
       tell application "iTerm"
         activate
         set newWindow to (create window with default profile)
-        tell current session of newWindow to write text "${command}"
+        tell current session of newWindow to write text "${escaped}"
       end tell`);
     return;
   }
   await runAppleScript(`
     tell application "Terminal"
       activate
-      do script "${command}"
+      do script "${escaped}"
     end tell`);
+}
+
+/** Opens `limactl shell` in a new terminal window. The name matches NAME_PATTERN, so it needs no quoting. */
+export async function openShell(name: string): Promise<void> {
+  await openInTerminal(`${limactlCommand()} shell ${name}`);
+}
+
+/** `limactl shell <name> <command…>` for a terminal, like `sudo tail -f <file>` inside the instance. */
+export function inInstanceCommand(name: string, command: string): string {
+  return `${limactlCommand()} shell ${name} ${command}`;
+}
+
+/** Runs a command inside a running instance and returns what it printed. */
+export async function runInInstance(name: string, command: string[]): Promise<string> {
+  return limactl(["shell", "--workdir", "/", name, ...command]);
 }
