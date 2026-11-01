@@ -3,7 +3,7 @@
   "name": "lima",
   "title": "Lima",
   "description": "Start, stop and open your Lima virtual machines, create them from templates, and run your own lima.yaml manifests, in a keyboard-first split view.",
-  "icon": "lima-icon.png",
+  "icon": "extension-icon.png",
   "author": "gibranbadrul",
   "categories": [
     "Developer Tools"
